@@ -1,7 +1,5 @@
 #pragma once
-#include <string>
-#include <fstream>
-namespace xkv
+namespace xraft
 {
 	namespace detail
 	{
@@ -62,6 +60,27 @@ namespace xkv
 				return false;
 			}
 			std::fstream file_;
+		};
+
+		class filelog
+		{
+		public:
+			filelog()
+			{
+			}
+			bool init(const std::string &dir)
+			{
+				if (!functors::fs::mkdir()(dir))
+					return false;
+				auto files = functors::fs::ls()(dir);
+				return false;
+			}
+			bool write(const detail::log_entry &buf, int64_t &index)
+			{
+				return false;
+			}
+		private:
+			std::map<uint64_t, detail::file> files_;
 		};
 	}
 	
