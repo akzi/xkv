@@ -19,7 +19,7 @@ namespace xraft
 
 		struct log_entry
 		{
-			enum class type
+			enum class type:char
 			{
 				e_append_log = 0,
 				e_configuration
@@ -29,9 +29,23 @@ namespace xraft
 			type type_;
 			std::string log_data_;
 
-			std::string to_string()
+			std::size_t bytes() const
 			{
+				return endec::get_sizeof(index_) +
+					endec::get_sizeof(term_) +
+					endec::get_sizeof(std::underlying_type<type>::type()) +
+					endec::get_sizeof(log_data_);
+			}
+			std::string to_string() const
+			{
+				std::string buffer_;
+				buffer_.resize(bytes());
 
+				return buffer_;
+			}
+			void from_string(const std::string &buffer)
+			{
+				//todo decode buffer to log_entry
 			}
 		};
 

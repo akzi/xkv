@@ -20,7 +20,7 @@ namespace xraft
 			}
 			int get_majority()
 			{
-				(current_config_.nodes_.size()) / 2 + 1;
+				return current_config_.nodes_.size() / 2 + 1;
 			}
 		private:
 			raft_config current_config_;

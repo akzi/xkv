@@ -30,7 +30,7 @@ namespace detail
 				queue_.emplace(std::forward<T>(val));
 			}
 		private:
-			std::queue queue_;
+			std::queue<T> queue_;
 			std::mutex mtx_;
 		};
 	}

@@ -12,11 +12,12 @@
 #include <fstream>
 #include <chrono>
 
+#include "endec.hpp"
+#include "raft_proto.hpp"
 #include "utils.hpp"
 #include "timer.hpp"
 #include "functors.hpp"
 #include "filelog.hpp"
-#include "raft_proto.hpp"
 #include "timer.hpp"
 #include "committer.hpp"
 #include "raft_peer.hpp"

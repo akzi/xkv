@@ -41,8 +41,7 @@ namespace detail
 		void notify()
 		{
 			utils::lock_guard locker(mtx_);
-			if (is_sleep_)
-				cv_.notify_one();
+			cv_.notify_one();
 		}
 		std::function<void(raft_peer&, bool)> connect_callback_;
 		std::function<int64_t(void)> get_current_term_;
@@ -132,13 +131,11 @@ namespace detail
 		void sleep(int milliseconds = 0)
 		{
 			std::unique_lock<std::mutex> lock(mtx_);
-			is_sleep_ = true;
 			if(!milliseconds)
 				cv_.wait(lock);
 			else {
 				cv_.wait_for(lock, std::chrono::milliseconds(milliseconds));
 			}
-			is_sleep_ = false;
 		}
 		
 		void update_heartbeat_time()
@@ -149,7 +146,6 @@ namespace detail
 		high_resolution_clock::time_point last_heart_beat_;
 		std::thread peer_thread_;
 
-		bool is_sleep_ = false;
 		std::mutex mtx_;
 		std::condition_variable cv_;
 
