@@ -28,6 +28,11 @@ namespace xraft
 			int64_t term_;
 			type type_;
 			std::string log_data_;
+
+			std::string to_string()
+			{
+
+			}
 		};
 
 		struct append_entries_request

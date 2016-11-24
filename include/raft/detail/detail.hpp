@@ -3,6 +3,7 @@
 #include <list>
 #include <vector>
 #include <map>
+#include <queue>
 #include <memory>
 #include <functional>
 #include <thread>
@@ -17,4 +18,6 @@
 #include "filelog.hpp"
 #include "raft_proto.hpp"
 #include "timer.hpp"
+#include "committer.hpp"
 #include "raft_peer.hpp"
+#include "raft_configuration.hpp"

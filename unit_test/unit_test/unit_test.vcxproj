@@ -110,9 +110,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\include\raft\detail\committer.hpp" />
     <ClInclude Include="..\..\include\raft\detail\detail.hpp" />
     <ClInclude Include="..\..\include\raft\detail\filelog.hpp" />
     <ClInclude Include="..\..\include\raft\detail\functors.hpp" />
+    <ClInclude Include="..\..\include\raft\detail\raft_configuration.hpp" />
     <ClInclude Include="..\..\include\raft\detail\raft_proto.hpp" />
     <ClInclude Include="..\..\include\raft\detail\raft_peer.hpp" />
     <ClInclude Include="..\..\include\raft\detail\timer.hpp" />

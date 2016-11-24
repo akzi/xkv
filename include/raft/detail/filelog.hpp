@@ -6,7 +6,7 @@ namespace xraft
 		class file
 		{
 		public:
-			file(const std::string &&filepath)
+			bool open(const std::string &filepath)
 			{
 				int mode =
 					std::ios::out |
@@ -75,12 +75,28 @@ namespace xraft
 				auto files = functors::fs::ls()(dir);
 				return false;
 			}
-			bool write(const detail::log_entry &buf, int64_t &index)
+
+			int64_t write(const detail::log_entry &entry)
 			{
-				return false;
+				std::lock_guard<std::mutex> lock(mtx_);
+				++last_index_;
+				crrent_file_.write(entry);
+				log_entry_cache_.emplace_back();
+				return last_index_;
+			}
+
+			int64_t get_last_index()
+			{
+				return last_index_;
 			}
 		private:
-			std::map<uint64_t, detail::file> files_;
+			std::mutex mtx_;
+			std::list<log_entry> log_entry_cache_;
+			int max_cache_size_;//bytes
+			int64_t last_index_ = 1;
+			file crrent_file_;
+			int64_t crrent_file_last_index_;
+			std::map<int64_t, detail::file> logfiles_;
 		};
 	}
 	

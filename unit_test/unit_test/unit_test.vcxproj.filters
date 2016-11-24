@@ -48,5 +48,11 @@
     <ClInclude Include="..\..\include\raft\detail\utils.hpp">
       <Filter>头文件\raft\detail</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\include\raft\detail\raft_configuration.hpp">
+      <Filter>头文件\raft\detail</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\raft\detail\committer.hpp">
+      <Filter>头文件\raft\detail</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
