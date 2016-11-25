@@ -21,6 +21,7 @@ namespace xraft
 				actions_.emplace(std::piecewise_construct, 
 					std::forward_as_tuple(timer_point), 
 					std::forward_as_tuple(timer_id,std::move(callback)));
+				cv_.notify_one();
 				return timer_id;
 			}
 			void cancel(int64_t timer_id)
@@ -31,6 +32,7 @@ namespace xraft
 					if (itr->second.first == timer_id)
 					{
 						actions_.erase(itr);
+						cv_.notify_one();
 						return;
 					}
 				}

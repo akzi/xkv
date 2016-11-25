@@ -93,6 +93,11 @@ namespace xraft
 			{
 				return data_file_.tellg();
 			}
+			//rm file from disk.
+			void rm()
+			{
+
+			}
 		private:
 			bool read(int64_t offset, std::string &buffer)
 			{
@@ -151,6 +156,11 @@ namespace xraft
 				crrent_file_.write(last_index_, std::move(buffer));
 				return last_index_;
 			}
+			log_entry get_log_entry(uint64_t index)
+			{
+				//todo impl;
+				return{};
+			}
 			std::list<log_entry> get_log_entries(int64_t index, std::size_t count = 10)
 			{
 				if (index < 0)
@@ -185,6 +195,10 @@ namespace xraft
 				return log_entries;
 				
 			}
+			void truncate(int64_t index)
+			{
+				last_index_ = index;
+			}
 			int64_t get_last_log_entry_term()
 			{
 				std::unique_lock<std::mutex> lock(mtx_);
@@ -196,7 +210,11 @@ namespace xraft
 				std::unique_lock<std::mutex> lock(mtx_);
 				return last_index_;
 			}
-
+			int64_t get_log_start_index()
+			{
+				//todo impl
+				return 0;
+			}
 		private:
 			void check_log_entries_size()
 			{

@@ -72,6 +72,7 @@ namespace xraft
 		struct append_entries_response
 		{
 			int64_t term_;
+			int64_t last_log_index_;
 			bool success_;
 		};
 

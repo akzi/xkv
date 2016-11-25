@@ -7,6 +7,9 @@ namespace xraft
 	{
 	public:
 		using append_log_callback = std::function<void(bool)>;
+		using commit_entry_callback = std::function<void(const std::string &)>;
+		using install_snapshot_handle = std::function<void(const std::string &, std::function<void()> &&)>;
+
 		enum state
 		{
 			e_follower,
@@ -27,11 +30,77 @@ namespace xraft
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
 		}
-		
+		void regist_commit_entry_callback(commit_entry_callback &&callback)
+		{
+			commit_entry_callback_ = callback;
+		}
 	private:
 		append_entries_response handle_append_entries_request(append_entries_request && request)
 		{
+			std::lock_guard<std::mutex> locker(mtx_);
+			append_entries_response response;
+			response.success_ = false;
+			response.term_ = current_term_;
+			if (request.term_ < current_term_)
+				//todo log Warm
+				return response;
+			
+			if (current_term_ < request.term_)
+			{
+				step_down(request.term_);
+				response.term_ = current_term_;
+			}
 
+			if (leader_id_.empty())
+				leader_id_ = request.leader_id_;
+			else if (leader_id_ != request.leader_id_)
+			{
+				leader_id_ = request.leader_id_;
+				//todo log Warm
+			}
+			if (request.prev_log_term_ == get_last_log_entry_term() &&
+				request.prev_log_index_ > get_last_log_entry_index())
+				return response;
+
+			if (request.prev_log_index_ > get_log_start_index() &&
+				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
+			{
+				//todo log Warm
+				return;
+			}
+			response.success_ = true;
+			auto check_log = true;
+			for (auto &itr : request.entries_)
+			{
+				if (check_log)
+				{
+					if (itr.index_ < get_log_start_index())
+						continue;
+					if (itr.index_ <= get_last_log_entry_index())
+					{
+						if (get_log_entry(itr.index_).term_ == itr.term_)
+							continue;
+						assert(committed_index_ < itr.index_);
+						log_.truncate(itr.index_ - 1);
+					}
+				}
+				log_.write(std::move(itr));
+			}
+			response.last_log_index_ = get_last_log_entry_index();
+			if (committed_index_ < request.leader_commit_)
+			{
+				auto leader_commit_ = request.leader_commit_;
+				commiter_.push([leader_commit_,this] {
+					auto entries = log_.get_log_entries(committed_index_ + 1, leader_commit_ - committed_index_);
+					for (auto &itr : entries)
+					{
+						assert(itr.index_ == committed_index_ + 1);
+						commit_entry_callback_(itr.log_data_);
+						++committed_index_;
+					}
+				});
+			}
+			set_election_timer();
 		}
 		vote_response handle_vote_request(const vote_request &request)
 		{
@@ -61,7 +130,39 @@ namespace xraft
 			response.log_ok_ = is_ok;
 			return response;
 		}
-		install_snapshot_response handle_install_snapshot (install_snapshot_request &snapshot)
+		install_snapshot_response handle_install_snapshot (install_snapshot_request &request)
+		{
+			install_snapshot_response response;
+			response.term_ = current_term_;
+			if (request.term_ < current_term_)
+			{
+				//todo LOG WARM
+				return;
+			}
+
+			if (request.term_ > current_term_)
+			{
+				//todo log Info
+				response.term_ = request.term_;
+			}
+			step_down(request.term_);
+			set_election_timer();
+			if (leader_id_.empty())
+			{
+				leader_id_ = request.leader_id_;
+				//todo log info
+			}
+			else if (leader_id_ != request.leader_id_)
+			{
+				//logo error;
+			}
+
+			if (!snapshot_writer_)
+				open_snapshot_writer();
+			response.bytes_stored_ = request.data_.size();
+			if (request.offset_ < snapshot_writer_.get_bytes_writted());
+		}
+		void open_snapshot_writer()
 		{
 
 		}
@@ -178,6 +279,14 @@ namespace xraft
 		{
 			return log_.get_last_index();
 		}
+		int get_log_start_index()
+		{
+			return log_.get_log_start_index();
+		}
+		log_entry get_log_entry(int64_t index)
+		{
+			return log_.get_log_entry(index);
+		}
 		int64_t current_term_;
 		int64_t committed_index_;
 		std::string raft_id_;
@@ -185,6 +294,10 @@ namespace xraft
 		std::string leader_id_;
 		int64_t election_timeout_ = 10000;
 		int64_t election_timer_id_;
+
+		commit_entry_callback commit_entry_callback_;
+		install_snapshot_handle install_snapshot_handle_;
+		snapshot_writer snapshot_writer_;
 
 		raft_config_mgr raft_config_mgr_;
 		int64_t append_log_timeout_ = 100000;//10 seconds;

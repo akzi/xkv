@@ -11,10 +11,12 @@
 #include <condition_variable>
 #include <fstream>
 #include <chrono>
+#include <cassert>
 
 #include "endec.hpp"
 #include "raft_proto.hpp"
 #include "utils.hpp"
+#include "snapshot_writer.hpp"
 #include "timer.hpp"
 #include "functors.hpp"
 #include "filelog.hpp"
