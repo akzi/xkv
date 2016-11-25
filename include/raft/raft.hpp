@@ -7,7 +7,7 @@ namespace xraft
 	{
 	public:
 		using append_log_callback = std::function<void(bool)>;
-		using commit_entry_callback = std::function<void(const std::string &)>;
+		using commit_entry_callback = std::function<void(std::string &&)>;
 		using install_snapshot_handle = std::function<void(const std::string &, std::function<void()> &&)>;
 
 		enum state
@@ -95,7 +95,7 @@ namespace xraft
 					for (auto &itr : entries)
 					{
 						assert(itr.index_ == committed_index_ + 1);
-						commit_entry_callback_(itr.log_data_);
+						commit_entry_callback_(std::move(itr.log_data_));
 						++committed_index_;
 					}
 				});
@@ -159,8 +159,33 @@ namespace xraft
 
 			if (!snapshot_writer_)
 				open_snapshot_writer();
-			response.bytes_stored_ = request.data_.size();
-			if (request.offset_ < snapshot_writer_.get_bytes_writted());
+			response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
+			if (request.offset_ != snapshot_writer_.get_bytes_writted())
+			{
+				//todo LOG WRAM
+				return response;
+			}
+			if (!snapshot_writer_.write(request.data_))
+			{
+				//todo LOG ERROR;
+				return response;
+			}
+			response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
+			if (request.done_)
+			{
+				if (request.last_snapshot_index_ < last_snapshot_index_)
+				{
+					//todo Warm
+					snapshot_writer_.discard();
+					return response;
+				}
+				load_snapshot();
+			}
+			return response;
+		}
+		void load_snapshot()
+		{
+
 		}
 		void open_snapshot_writer()
 		{
@@ -287,6 +312,8 @@ namespace xraft
 		{
 			return log_.get_log_entry(index);
 		}
+		int64_t last_snapshot_index_;
+		int64_t last_snapshot_term_;
 		int64_t current_term_;
 		int64_t committed_index_;
 		std::string raft_id_;

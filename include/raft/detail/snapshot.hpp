@@ -3,6 +3,11 @@ namespace xraft
 {
 	namespace detail
 	{
+		struct sanpshot
+		{
+			int64_t last_included_index_;
+			int64_t last_included_term_;
+		};
 		class snapshot_writer
 		{
 		public:
@@ -24,15 +29,29 @@ namespace xraft
 				file_.open(filepath_.c_str(), mode);
 				return file_.good();
 			}
+			void close()
+			{
+				if(file_.is_open())
+					file_.close();
+			}
 			bool write(const std::string &buffer)
 			{
 				file_.write(buffer.data(), buffer.size());
 				file_.sync();
 				return file_.good();
 			}
+			void discard()
+			{
+				close();
+				//todo rm file
+			}
 			std::size_t get_bytes_writted()
 			{
 				return file_.tellp();
+			}
+			std::string get_snapshot_filepath()
+			{
+				return filepath_;
 			}
 		private:
 			std::string filepath_;

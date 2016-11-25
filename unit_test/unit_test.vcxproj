@@ -27,7 +27,7 @@
     <ClInclude Include="..\include\raft\detail\raft_configuration.hpp" />
     <ClInclude Include="..\include\raft\detail\raft_peer.hpp" />
     <ClInclude Include="..\include\raft\detail\raft_proto.hpp" />
-    <ClInclude Include="..\include\raft\detail\snapshot_writer.hpp" />
+    <ClInclude Include="..\include\raft\detail\snapshot.hpp" />
     <ClInclude Include="..\include\raft\detail\timer.hpp" />
     <ClInclude Include="..\include\raft\detail\utils.hpp" />
     <ClInclude Include="..\include\raft\raft.hpp" />

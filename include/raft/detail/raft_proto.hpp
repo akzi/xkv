@@ -80,7 +80,7 @@ namespace xraft
 		{
 			int64_t term_;
 			std::string leader_id_;
-			int64_t last_included_index_;
+			int64_t last_snapshot_index_;
 			int64_t last_included_term_;
 			int64_t offset_;
 			std::string data_;
