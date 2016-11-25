@@ -78,7 +78,7 @@ namespace xraft
 		typename std::enable_if<std::is_same<std::string,T>::value, std::size_t>::type
 			get_sizeof(const T &t)
 		{
-			return t.size();
+			return t.size() + sizeof(uint32_t);
 		}
 	}
 }

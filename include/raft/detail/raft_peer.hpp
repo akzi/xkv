@@ -8,12 +8,13 @@ namespace detail
 	{
 		
 	public:
-		enum cmd_t
+		enum class cmd_t
 		{
 			e_connect,
 			e_election,
 			e_append_entries,
 			e_sleep,
+			e_exit,
 
 		};
 		struct config
@@ -47,12 +48,7 @@ namespace detail
 		std::function<int64_t(void)> get_current_term_;
 		std::function<int64_t(void)> get_last_log_index_;
 		std::function<append_entries_request(int64_t)> build_append_entries_request_;
-		std::function<void(append_entries_request &&)> append_entries_request_;
-		std::function<void(append_entries_response &&)> append_entries_response_;
-		std::function<vote_request()> build_vote_request_;
 		std::function<void(vote_response &&)> vote_response_;
-		std::function<void(install_snapshot &&)> install_snapshot_;
-		std::function<void(install_snapshot_result &&)> install_snapshot_result_;
 		std::function<void(int64_t)> new_term_callback_;
 		std::function<void(std::vector<int64_t>)> append_entries_success_callback_;
 		config config_;
@@ -62,15 +58,16 @@ namespace detail
 			do
 			{
 				if (!try_execute_cmd())
-					sleep(0);
-			} while (true);
+					do_sleep(0);
+			} while (stop_);
 		}
-		void try_append_log()
+		void do_append_entries()
 		{
 			do
 			{
 				try
 				{
+					try_execute_cmd();
 					int64_t index = get_last_log_index_();
 					if (index == match_index_ && send_heartbeat_)
 						break;
@@ -84,7 +81,8 @@ namespace detail
 							new_term_callback_(response.term_);
 							return;
 						}
-						next_index_ -= 1;
+						--next_index_;
+						continue;
 					}
 					std::vector<int64_t> indexs;
 					indexs.reserve(request.entries_.size());
@@ -93,7 +91,6 @@ namespace detail
 					append_entries_success_callback_(indexs);
 					match_index_ = request.prev_log_index_ + request.entries_.size();
 					next_index_ = match_index_ + 1;
-					try_execute_cmd();
 				}
 				catch (...)
 				{
@@ -119,16 +116,27 @@ namespace detail
 				return false;
 			switch (cmd)
 			{
-			case xraft::detail::raft_peer::e_connect:
+			case cmd_t::e_connect:
+				do_connect();
 				break;
-			case xraft::detail::raft_peer::e_sleep:
+			case cmd_t::e_sleep:
+				do_sleep();
 				break;
+			case cmd_t::e_election:
+				do_election();
+				break;
+			case cmd_t::e_append_entries:
+				do_append_entries();
+				break;
+			case cmd_t::e_exit:
+				do_exist();
 			default:
+				//todo log error
 				break;
 			}
 			return true;
 		}
-		void sleep(int milliseconds = 0)
+		void do_sleep(int milliseconds = 0)
 		{
 			std::unique_lock<std::mutex> lock(mtx_);
 			if(!milliseconds)
@@ -143,9 +151,22 @@ namespace detail
 			last_heart_beat_ = high_resolution_clock::now();
 			send_heartbeat_ = true;
 		}
-		high_resolution_clock::time_point last_heart_beat_;
-		std::thread peer_thread_;
+		void do_connect()
+		{
+			//todo rpc connect
+			connect_callback_(*this, true);
+		}
+		void do_election()
+		{
 
+		}
+		void do_exist()
+		{
+			stop_ = true;
+		}
+		high_resolution_clock::time_point last_heart_beat_;
+		bool stop_ = false;
+		std::thread peer_thread_;
 		std::mutex mtx_;
 		std::condition_variable cv_;
 

@@ -15,13 +15,14 @@ namespace xraft
 		{
 			int64_t term_;
 			bool vote_granted_;
+			bool log_ok_;
 		};
 
 		struct log_entry
 		{
 			enum class type:char
 			{
-				e_append_log = 0,
+				e_append_log,
 				e_configuration
 			};
 			int64_t index_;
@@ -48,14 +49,23 @@ namespace xraft
 				//todo decode buffer to log_entry
 			}
 		};
-
+		struct raft_config
+		{
+			struct raft_node
+			{
+				std::string ip_;
+				int port_;
+				std::string raft_id_;
+			};
+			std::vector<raft_node> nodes_;
+		};
 		struct append_entries_request
 		{
 			int64_t term_;
 			std::string leader_id_;
 			int64_t prev_log_index_;
 			int64_t prev_log_term_;
-			std::vector<log_entry>entries_;
+			std::list<log_entry>entries_;
 			int64_t leader_commit_;
 		};
 
@@ -65,7 +75,7 @@ namespace xraft
 			bool success_;
 		};
 
-		struct install_snapshot
+		struct install_snapshot_request
 		{
 			int64_t term_;
 			std::string leader_id_;
@@ -76,9 +86,10 @@ namespace xraft
 			bool done_;
 		};
 
-		struct install_snapshot_result 
+		struct install_snapshot_response
 		{
 			int64_t term_;
+			int64_t bytes_stored_;
 		};
 	}
 }

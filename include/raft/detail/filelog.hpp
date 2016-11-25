@@ -45,10 +45,13 @@ namespace xraft
 				return true;
 			}
 
-			std::vector<log_entry> get_log_entries(int64_t index)
+			bool get_log_entries(int64_t &index, 
+								std::size_t &count,
+								std::list<log_entry> &log_entries, 
+								std::unique_lock<std::mutex> &lock)
 			{
-				std::vector<log_entry> log_entries;
 				std::lock_guard<std::mutex> lock(mtx_);
+				lock.unlock();
 
 				auto diff = index - last_log_index_;
 				std::size_t offset = diff * sizeof(int64_t) * 2;
@@ -56,35 +59,35 @@ namespace xraft
 				int64_t index_buffer_;
 				index_file_.read((char*)&index_buffer_, sizeof(int64_t));
 				if (!index_file_.good())
-					return log_entries;
+					return false;
 				if(index_buffer_ != index)
 					//todo log error.
-					return log_entries;
+					return false;
 				int64_t data_file_offset;
 				index_file_.read((char*)&data_file_offset, sizeof(int64_t));
 				if (!index_file_.good())
-					return log_entries;
+					return false;
 
 				data_file_.seekg(data_file_offset, std::ios::beg);
 				if (!data_file_.good())
-					return log_entries;
+					return false;
 				do 
 				{
 					uint32_t len;
 					data_file_.read((char*)&len, sizeof(uint32_t));
 					if (!data_file_.good())
-						return log_entries;
+						return data_file_.eof();
 					std::string buffer;
 					buffer.resize(len);
 					data_file_.read((char*)buffer.data(), len);
 					if (!data_file_.good())
-						return log_entries;
+						return false;
 					log_entry entry;
 					entry.from_string(buffer);
 					log_entries.emplace_back(std::move(entry));
-
-				} while (--index > 0);
-				return log_entries;
+					index ++ ;
+				} while (--count > 0);
+				return true;
 			}
 			int64_t size()
 			{
@@ -148,36 +151,52 @@ namespace xraft
 				crrent_file_.write(last_index_, std::move(buffer));
 				return last_index_;
 			}
-			std::vector<log_entry> get_log_entries(int64_t index, std::size_t count = 10)
+			std::list<log_entry> get_log_entries(int64_t index, std::size_t count = 10)
 			{
-				std::vector<log_entry> log_entries;
+				if (index < 0)
+					index = 0;
+				std::list<log_entry> log_entries;
 				std::unique_lock<std::mutex> lock(mtx_);
-				if (log_entries_cache_.size() && 
-					log_entries_cache_.front().index_ <= index)
+				do
 				{
-					for (auto &itr : log_entries_cache_)
+					if (log_entries_cache_.size() && log_entries_cache_.front().index_ <= index)
 					{
-						if (index == itr.index_)
+						for (auto &itr : log_entries_cache_)
 						{
-							log_entries.push_back(itr);
-							++index;
-							count--;
-							if (count == 0)
-								break;
+							if (index == itr.index_)
+							{
+								log_entries.push_back(itr);
+								++index;
+								count--;
+								if (count == 0)
+									return log_entries;
+							}
 						}
+						return log_entries;
 					}
-					return log_entries;
-				}
-				auto itr = logfiles_.upper_bound(index);
-				if (itr == logfiles_.end())
-					return log_entries;
-				lock.unlock();
-				return itr->second.get_log_entries(index);
+
+					auto itr = logfiles_.upper_bound(index);
+					if (itr == logfiles_.end())
+						return log_entries;
+					if (!itr->second.get_log_entries(index, count, log_entries, lock))
+						//logo error
+						return log_entries;
+				} while (count > 0);
+				return log_entries;
+				
+			}
+			int64_t get_last_log_entry_term()
+			{
+				std::unique_lock<std::mutex> lock(mtx_);
+				if (log_entries_cache_.size())
+					return log_entries_cache_.back().term_;
 			}
 			int64_t get_last_index()
 			{
+				std::unique_lock<std::mutex> lock(mtx_);
 				return last_index_;
 			}
+
 		private:
 			void check_log_entries_size()
 			{

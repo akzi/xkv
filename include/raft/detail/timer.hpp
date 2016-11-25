@@ -54,13 +54,14 @@ namespace xraft
 					auto timeout_point = itr->first;
 					if (timeout_point > high_resolution_clock::now())
 					{
-						cv_.wait_until(lock, timeout_point, 
-							[this] {return !!actions_.size(); });
+						cv_.wait_until(lock, timeout_point, [this] {
+							return !!actions_.size(); 
+						});
 						continue;
 					}
+					auto action = std::move(itr->second.second);
 					lock.unlock();
-					itr->second.second();
-
+					action();
 				} while (!stop_);
 			}
 			int64_t gen_timer_id()

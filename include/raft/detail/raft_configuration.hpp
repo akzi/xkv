@@ -3,14 +3,6 @@ namespace xraft
 {
 	namespace detail
 	{
-		struct raft_config
-		{
-			struct raft_node
-			{
-
-			};
-			std::vector<raft_node> nodes_;
-		};
 		class raft_config_mgr
 		{
 		public:
