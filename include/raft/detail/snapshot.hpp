@@ -3,7 +3,7 @@ namespace xraft
 {
 	namespace detail
 	{
-		struct sanpshot_head
+		struct snapshot_head
 		{
 			uint32_t version = 1;
 			static constexpr uint32_t magic_num = 'X'+'R'+'A'+'F'+'T';
@@ -25,7 +25,7 @@ namespace xraft
 				file_.open(filepath_.c_str(), mode);
 				return file_.good();
 			}
-			bool read_sanpshot_head(sanpshot_head &head)
+			bool read_sanpshot_head(snapshot_head &head)
 			{
 				std::string buffer;
 				buffer.resize(sizeof(head));
@@ -57,7 +57,7 @@ namespace xraft
 			{
 				return file_.good();
 			}
-			bool open(std::string filepath)
+			bool open(const std::string &filepath)
 			{
 				filepath_ = filepath;
 				assert(!file_.is_open());
@@ -74,7 +74,7 @@ namespace xraft
 				if(file_.is_open())
 					file_.close();
 			}
-			bool write_sanpshot_head(const sanpshot_head &head)
+			bool write_sanpshot_head(const snapshot_head &head)
 			{
 				std::string buffer;
 				buffer.resize(sizeof(head));

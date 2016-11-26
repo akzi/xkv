@@ -12,6 +12,9 @@
 #include <fstream>
 #include <chrono>
 #include <cassert>
+#ifdef _MSC_VER
+#include<windows.h> 
+#endif
 
 #include "endec.hpp"
 #include "raft_proto.hpp"
@@ -22,5 +25,7 @@
 #include "timer.hpp"
 #include "committer.hpp"
 #include "snapshot.hpp"
+#include "metadata.hpp"
 #include "raft_peer.hpp"
 #include "raft_configuration.hpp"
+

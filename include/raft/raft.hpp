@@ -8,7 +8,7 @@ namespace xraft
 	public:
 		using append_log_callback = std::function<void(bool)>;
 		using commit_entry_callback = std::function<void(std::string &&)>;
-		using install_snapshot_handle = std::function<void(const std::string &, std::function<void()> &&)>;
+		using install_snapshot_handle = std::function<void(std::ifstream &&)>;
 
 		enum state
 		{
@@ -35,7 +35,7 @@ namespace xraft
 			commit_entry_callback_ = callback;
 		}
 	private:
-		append_entries_response handle_append_entries_request(append_entries_request && request)
+		auto handle_append_entries_request(append_entries_request && request)
 		{
 			std::lock_guard<std::mutex> locker(mtx_);
 			append_entries_response response;
@@ -81,7 +81,7 @@ namespace xraft
 						if (get_log_entry(itr.index_).term_ == itr.term_)
 							continue;
 						assert(committed_index_ < itr.index_);
-						log_.truncate(itr.index_ - 1);
+						log_.truncate_suffix(itr.index_ - 1);
 					}
 				}
 				log_.write(std::move(itr));
@@ -91,7 +91,8 @@ namespace xraft
 			{
 				auto leader_commit_ = request.leader_commit_;
 				commiter_.push([leader_commit_,this] {
-					auto entries = log_.get_log_entries(committed_index_ + 1, leader_commit_ - committed_index_);
+					auto entries = log_.get_log_entries(committed_index_ + 1, 
+						leader_commit_ - committed_index_);
 					for (auto &itr : entries)
 					{
 						assert(itr.index_ == committed_index_ + 1);
@@ -130,14 +131,14 @@ namespace xraft
 			response.log_ok_ = is_ok;
 			return response;
 		}
-		install_snapshot_response handle_install_snapshot (install_snapshot_request &request)
+		auto handle_install_snapshot (install_snapshot_request &request)
 		{
 			install_snapshot_response response;
 			response.term_ = current_term_;
 			if (request.term_ < current_term_)
 			{
 				//todo LOG WARM
-				return;
+				return response;
 			}
 
 			if (request.term_ > current_term_)
@@ -158,7 +159,7 @@ namespace xraft
 			}
 
 			if (!snapshot_writer_)
-				open_snapshot_writer();
+				open_snapshot_writer(request.last_snapshot_index_);
 			response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
 			if (request.offset_ != snapshot_writer_.get_bytes_writted())
 			{
@@ -185,11 +186,29 @@ namespace xraft
 		}
 		void load_snapshot()
 		{
-
+			snapshot_writer_.close();
+			snapshot_reader reader;
+			if (!reader.open(snapshot_writer_.get_snapshot_filepath()))
+			{
+				//todo process error;
+			}
+			snapshot_head head;
+			if (!reader.read_sanpshot_head(head))
+			{
+				//todo process error;
+			}
+			if (head.last_included_index_ > committed_index_)
+				committed_index_ = head.last_included_index_;
+			log_.truncate_suffix(head.last_included_index_);
 		}
-		void open_snapshot_writer()
+		void open_snapshot_writer(int64_t index)
 		{
-
+			if(functors::fs::mkdir()("data/snapshot/"))
+				snapshot_writer_.open("data/snapshot/"+std::to_string(index)+".SS");
+			else
+			{
+				//todo process Error;
+			}
 		}
 		void step_down(int64_t new_term)
 		{
@@ -221,14 +240,16 @@ namespace xraft
 		}
 		void update_Log_metadata()
 		{
-
+			metadata_.set("leader_id", leader_id_);
 		}
 		struct append_log_callback_info
 		{
-			append_log_callback_info(int waits, int64_t timer_id, append_log_callback && callback)
-				:waits_(waits),
-				timer_id_(timer_id),
-				callback_(callback){}
+			append_log_callback_info(int waits, 
+				int64_t timer_id, 
+				append_log_callback && callback)
+					:waits_(waits),
+					timer_id_(timer_id),
+					callback_(callback){}
 
 			int waits_;
 			int64_t timer_id_;
@@ -258,7 +279,8 @@ namespace xraft
 				append_log_callbacks_.erase(itr);
 			});
 		}
-		log_entry build_log_entry(std::string &&log, log_entry::type type = log_entry::type::e_append_log)
+		log_entry build_log_entry(std::string &&log, 
+			log_entry::type type = log_entry::type::e_append_log)
 		{
 			log_entry entry;
 			entry.term_ = current_term_;
@@ -326,6 +348,7 @@ namespace xraft
 		install_snapshot_handle install_snapshot_handle_;
 		snapshot_writer snapshot_writer_;
 
+		metadata metadata_;
 		raft_config_mgr raft_config_mgr_;
 		int64_t append_log_timeout_ = 100000;//10 seconds;
 		std::vector<std::unique_ptr<raft_peer>> pees_;

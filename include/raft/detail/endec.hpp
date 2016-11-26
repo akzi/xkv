@@ -70,6 +70,18 @@ namespace xraft
 				(((uint64_t)buffer_++) << 8) |
 				((uint64_t)buffer_++);
 		}
+		inline void put_string(unsigned char *&buffer_, const std::string &str)
+		{
+			put_uint32(buffer_, str.size());
+			memcpy(buffer_, str.data(), str.size());
+		}
+		std::string get_string(unsigned char *&buffer_)
+		{
+			auto len = get_uint32(buffer_);
+			std::string result((char*)buffer_, len);
+			buffer_ += len;
+			return std::move(result);
+		}
 		template <typename T>
 		typename std::enable_if<std::is_arithmetic<T>::value, std::size_t>::type 
 			get_sizeof(T)
@@ -81,7 +93,7 @@ namespace xraft
 		typename std::enable_if<std::is_same<std::string,T>::value, std::size_t>::type
 			get_sizeof(const T &t)
 		{
-			return t.size() + sizeof(uint32_t);
+			return sizeof(uint32_t) + t.size();
 		}
 	}
 }

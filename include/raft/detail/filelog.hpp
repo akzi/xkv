@@ -267,7 +267,11 @@ namespace xraft
 
 				return log_entries;
 			}
-			void truncate(int64_t index)
+			void truncate_prefix(int64_t index)
+			{
+
+			}
+			void truncate_suffix(int64_t index)
 			{
 				last_index_ = index;
 			}
