@@ -35,9 +35,7 @@ namespace detail
 		{
 			if (!functors::fs::mkdir()(path))
 				return false;
-
-			auto files = functors::fs::ls()(path);
-			std::sort(files.begin().files.end());
+			path_ = path;
 			load();
 		}
 		bool set(const std::string &key, const std::string &value)
@@ -111,11 +109,31 @@ namespace detail
 			log_.write((char*)(&len), sizeof len);
 			log_.write(data.data(), data.size());
 			log_.flush();
-			return log_.good();
-		}
-		void load()
-		{
+			return log_.good() && try_make_snapshot();
 
+		}
+		bool load()
+		{
+			std::vector<std::string> files = functors::fs::ls_files()(path_);
+			if (files.empty())
+			{
+				return reopen_log();
+			}
+			std::sort(files.begin().files.end(),std::greater<std::string>());
+			for (auto &file: files)
+			{
+				auto end = file.find(".metadata");
+				if (end != std::string::npos)
+				{
+					std::size_t beg = file.find_last_of('/');
+					if (beg == std::string::npos)
+						beg = file.find_last_of('\\');
+					std::string index = file.substr(beg, end - beg);
+					index_ = std::strtoul(index.c_str(), 0, 10);
+					if(error == ERANGE)
+						continue;
+				}
+			}
 		}
 		template<typename T>
 		bool write(std::ofstream &file, T &map)
@@ -129,42 +147,46 @@ namespace detail
 			}
 			return true;
 		}
-		void make_snapshot()
+		bool try_make_snapshot()
 		{
 			if (max_log_file_ > log_.tellp())
-				return;
+				return true;
 			std::ofstream file;
 			int mode = std::ios::binary |
 				std::ios::trunc |
 				std::ios::out;
-			++file_index_;
+			++index_;
 			file.open(get_snapshot_file().c_str(), mode);
 			if (!file.good())
 			{
 				//process error
+				return false;
 			}
 			if (!write(file, string_map_))
 			{
 				//process error
+				return false;
 			}
 			if (!write(file, integral_map_))
 			{
 				//process error
+				return false;
 			}
 			file.flush();
 			file.close();
 			if (!reopen_log())
 			{
-
+				return false;
 			}
 			if (!touch_metadata_file())
 			{
-
+				return false;
 			}
 			if (!rm_old_files())
 			{
-
+				return false;
 			}
+			return true;
 		}
 		bool reopen_log()
 		{
@@ -189,44 +211,48 @@ namespace detail
 			if (!functors::fs::rm()(get_old_log_file()))
 			{
 				//todo log error
+				return false;
 			}
 			if (!functors::fs::rm()(get_old_snapshot_file()))
 			{
 				//todo log error
+				return false;
 			}
 			if (!functors::fs::rm()(get_old_metadata_file()))
 			{
 				//todo log error
+				return false;
 			}
+			return true;
 		}
 		std::string get_snapshot_file()
 		{
-			return std::to_string(file_index_)+ ".metadata.ss";
+			return path_ + std::to_string(index_)+ ".data";
 		}
 		std::string get_log_file()
 		{
-			return std::to_string(file_index_) + ".metadata.log";
+			return path_ + std::to_string(index_) + ".log";
 		}
 		std::string get_metadata_file()
 		{
-			return std::to_string(file_index_) + ".metadata";
+			return path_ + std::to_string(index_) + ".metadata";
 		}
 		std::string get_old_snapshot_file()
 		{
-			return std::to_string(file_index_ - 1) + ".metadata.ss";
+			return path_ + std::to_string(index_ - 1) + ".data";
 		}
 		std::string get_old_log_file()
 		{
-			return std::to_string(file_index_ - 1) + ".metadata.log";
+			return path_ + std::to_string(index_ - 1) + ".log";
 		}
 		std::string get_old_metadata_file()
 		{
-			return std::to_string(file_index_ - 1) + ".metadata";
+			return path_ + std::to_string(index_ - 1) + ".metadata";
 		}
-		uint64_t file_index_ = 0;
+		uint64_t index_ = 0;
 		std::size_t max_log_file_ = 1024 * 1024;
 		std::ofstream log_;
-		std::string filepath_;
+		std::string path_;
 		mutex mtx_;
 		std::map<std::string, std::string> string_map_;
 		std::map<std::string, int64_t> integral_map_;

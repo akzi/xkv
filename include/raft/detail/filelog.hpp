@@ -190,7 +190,7 @@ namespace xraft
 			{
 				if (!functors::fs::mkdir()(dir))
 					return false;
-				auto files = functors::fs::ls()(dir);
+				auto files = functors::fs::ls_files()(dir);
 				for (auto &itr :files)
 				{
 					if (itr.find(".log") != std::string::npos)

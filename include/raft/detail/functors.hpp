@@ -13,7 +13,7 @@ namespace fs
 			return CreateDirectory(dir.c_str(), NULL);
 		}
 	};
-	struct ls
+	struct ls_files
 	{
 		std::vector<std::string> operator()(const std::string &dir)
 		{
