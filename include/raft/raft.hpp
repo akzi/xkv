@@ -66,7 +66,7 @@ namespace xraft
 				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
 			{
 				//todo log Warm
-				return;
+				return response;
 			}
 			response.success_ = true;
 			auto check_log = true;
@@ -326,7 +326,7 @@ namespace xraft
 		{
 			return log_.get_last_index();
 		}
-		int get_log_start_index()
+		int64_t get_log_start_index()
 		{
 			return log_.get_log_start_index();
 		}
@@ -348,7 +348,7 @@ namespace xraft
 		install_snapshot_handle install_snapshot_handle_;
 		snapshot_writer snapshot_writer_;
 
-		metadata metadata_;
+		metadata<> metadata_;
 		raft_config_mgr raft_config_mgr_;
 		int64_t append_log_timeout_ = 100000;//10 seconds;
 		std::vector<std::unique_ptr<raft_peer>> pees_;

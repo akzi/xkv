@@ -5,17 +5,17 @@ namespace xraft
 	{
 		struct vote_request
 		{
-			int64_t term_;
+			int64_t term_ = 0;
 			std::string candidate_;
-			int64_t last_log_index_;
-			int64_t last_log_term_;
+			int64_t last_log_index_ = 0;
+			int64_t last_log_term_ = 0;
 		};
 
 		struct vote_response 
 		{
-			int64_t term_;
-			bool vote_granted_;
-			bool log_ok_;
+			int64_t term_ = 0;
+			bool vote_granted_ = false;
+			bool log_ok_ = false;
 		};
 
 		struct log_entry
@@ -25,9 +25,9 @@ namespace xraft
 				e_append_log,
 				e_configuration
 			};
-			int64_t index_;
-			int64_t term_;
-			type type_;
+			int64_t index_ = 0;
+			int64_t term_ = 0;
+			type type_ = type::e_append_log;
 			std::string log_data_;
 
 			std::size_t bytes() const
@@ -54,43 +54,43 @@ namespace xraft
 			struct raft_node
 			{
 				std::string ip_;
-				int port_;
+				int port_ = 0;
 				std::string raft_id_;
 			};
 			std::vector<raft_node> nodes_;
 		};
 		struct append_entries_request
 		{
-			int64_t term_;
-			std::string leader_id_;
-			int64_t prev_log_index_;
+			int64_t term_ = 0;
+			std::string leader_id_ = 0;
+			int64_t prev_log_index_ = 0;
 			int64_t prev_log_term_;
 			std::list<log_entry>entries_;
-			int64_t leader_commit_;
+			int64_t leader_commit_ = 0;
 		};
 
 		struct append_entries_response
 		{
-			int64_t term_;
-			int64_t last_log_index_;
-			bool success_;
+			int64_t term_ = 0;
+			int64_t last_log_index_ = 0;
+			bool success_ = false;
 		};
 
 		struct install_snapshot_request
 		{
-			int64_t term_;
+			int64_t term_ = 0;
 			std::string leader_id_;
-			int64_t last_snapshot_index_;
-			int64_t last_included_term_;
-			int64_t offset_;
+			int64_t last_snapshot_index_ = 0;
+			int64_t last_included_term_ = 0;
+			int64_t offset_ = 0;
 			std::string data_;
-			bool done_;
+			bool done_ = false;
 		};
 
 		struct install_snapshot_response
 		{
-			int64_t term_;
-			int64_t bytes_stored_;
+			int64_t term_ = 0;
+			int64_t bytes_stored_ = 0;
 		};
 	}
 }

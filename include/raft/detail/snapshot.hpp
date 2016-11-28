@@ -95,7 +95,7 @@ namespace xraft
 			void discard()
 			{
 				close();
-				//todo rm file
+				functors::fs::rm()(filepath_);
 			}
 			std::size_t get_bytes_writted()
 			{

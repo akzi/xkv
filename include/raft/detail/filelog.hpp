@@ -6,6 +6,10 @@ namespace xraft
 		class file
 		{
 		public:
+			file()
+			{
+
+			}
 			~file()
 			{
 				//stop filelog remove this file immediately .
@@ -16,7 +20,19 @@ namespace xraft
 			{
 				std::lock_guard<std::mutex> lock(mtx_);
 				std::lock_guard<std::mutex> lock2(f.mtx_);
-
+				if (&f == this)
+					return;
+				data_file_ = std::move(data_file_);
+				index_file_ = std::move(index_file_);
+				last_log_index_ = f.last_log_index_;
+				log_index_start_ = f.log_index_start_;
+			}
+			file(file &&f)
+			{
+				std::lock_guard<std::mutex> lock(mtx_);
+				std::lock_guard<std::mutex> lock2(f.mtx_);
+				if (&f == this)
+					return;
 				data_file_ = std::move(data_file_);
 				index_file_ = std::move(index_file_);
 				last_log_index_ = f.last_log_index_;
@@ -64,7 +80,7 @@ namespace xraft
 								std::list<log_entry> &log_entries, 
 								std::unique_lock<std::mutex> &lock)
 			{
-				std::lock_guard<std::mutex> lock(mtx_);
+				std::lock_guard<std::mutex> lock_guard(mtx_);
 				lock.unlock();
 
 				auto diff = index - last_log_index_;
@@ -103,7 +119,7 @@ namespace xraft
 				} while (--count > 0);
 				return true;
 			}
-			int64_t size()
+			std::size_t size()
 			{
 				data_file_.seekp(0, std::ios::end);
 				return data_file_.tellp();
@@ -319,8 +335,8 @@ namespace xraft
 
 			std::mutex mtx_;
 			std::list<log_entry> log_entries_cache_;
-			std::size_t log_entries_cache_size_;
-			std::size_t max_cache_size_ = 10 * 1024 * 1024;
+			std::size_t log_entries_cache_size_ = 10*1024*1024;
+			std::size_t max_cache_size_ = 10*1024*1024;
 			std::size_t max_file_size_ = 10*1024*1024;
 			int64_t last_index_ = 1;
 			file current_file_;

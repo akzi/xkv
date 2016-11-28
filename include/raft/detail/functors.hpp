@@ -10,7 +10,8 @@ namespace fs
 	{
 		bool operator()(const std::string &dir)
 		{
-			return CreateDirectory(dir.c_str(), NULL);
+			return !!CreateDirectory(dir.c_str(), NULL) || 
+				ERROR_ALREADY_EXISTS == GetLastError();
 		}
 	};
 	struct ls_files
@@ -24,7 +25,7 @@ namespace fs
 				return {};
 			while (TRUE)
 			{
-				if (find_data.dwFileAttributes & FILE_ATTRIBUTE_NORMAL)
+				if (find_data.dwFileAttributes & ~FILE_ATTRIBUTE_DIRECTORY)
 				{
 					files.emplace_back(std::string(dir) + find_data.cFileName);
 				}
@@ -40,7 +41,7 @@ namespace fs
 	{
 		bool operator()(const std::string &filepath)
 		{
-			return DeleteFile(filepath.c_str());
+			return !!DeleteFile(filepath.c_str());
 		}
 	};
 #endif
