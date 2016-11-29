@@ -83,7 +83,7 @@ namespace fs
 	{
 		bool operator()(const std::string &old_file, const std::string &new_file)
 		{
-			return !!::rename(old_file.c_str(), new_file.c_str());
+			return ::rename(old_file.c_str(), new_file.c_str()) == 0;
 		}
 	};
 	struct truncate_prefix
@@ -121,9 +121,9 @@ namespace fs
 			do
 			{
 				old_file.read(buffer, buffer_len);
+				tmp_file.write(buffer, old_file.gcount());
 				if (old_file.eof())
 					break;
-				tmp_file.write(buffer, old_file.gcount());
 			} while (true);
 			old_file.close();
 			tmp_file.close();
