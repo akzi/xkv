@@ -24,6 +24,7 @@
     <ClInclude Include="..\include\raft\detail\endec.hpp" />
     <ClInclude Include="..\include\raft\detail\filelog.hpp" />
     <ClInclude Include="..\include\raft\detail\functors.hpp" />
+    <ClInclude Include="..\include\raft\detail\macros.hpp" />
     <ClInclude Include="..\include\raft\detail\metadata.hpp" />
     <ClInclude Include="..\include\raft\detail\raft_configuration.hpp" />
     <ClInclude Include="..\include\raft\detail\raft_peer.hpp" />
@@ -34,7 +35,8 @@
     <ClInclude Include="..\include\raft\raft.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="unit_test.cpp" />
+    <ClCompile Include="filelog.cpp" />
+    <ClCompile Include="metadata.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{361F45D5-0378-4012-B1C5-CB72C794183D}</ProjectGuid>

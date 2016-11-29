@@ -26,7 +26,9 @@ namespace xraft
 		}
 		void replicate(std::string &&data, append_log_callback&&callback)
 		{
-			auto index = log_.write(build_log_entry(std::move(data)));
+			int64_t index;
+			if (!log_.write(build_log_entry(std::move(data)), index))
+				callback(false);
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
 		}
@@ -84,7 +86,8 @@ namespace xraft
 						log_.truncate_suffix(itr.index_ - 1);
 					}
 				}
-				log_.write(std::move(itr));
+				int64_t index;
+				log_.write(std::move(itr), index);
 			}
 			response.last_log_index_ = get_last_log_entry_index();
 			if (committed_index_ < request.leader_commit_)
@@ -332,7 +335,12 @@ namespace xraft
 		}
 		log_entry get_log_entry(int64_t index)
 		{
-			return log_.get_log_entry(index);
+			log_entry entry;
+			if (!log_.get_log_entry(index, entry))
+			{
+				//todo log error;
+			}
+			return std::move(entry);
 		}
 		int64_t last_snapshot_index_;
 		int64_t last_snapshot_term_;

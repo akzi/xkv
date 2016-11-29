@@ -1,6 +1,7 @@
 #include "../../xtest/include/xtest.hpp"
 #include "../include/raft/raft.hpp"
 xtest_run;
+#if 0
 
 XTEST_SUITE(metadata)
 {
@@ -73,3 +74,4 @@ XTEST_SUITE(metadata)
 		std::cout << "ok" << std::endl;
 	}
 }
+#endif // 0

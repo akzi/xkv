@@ -42,10 +42,10 @@ namespace xraft
 		inline uint32_t get_uint32(unsigned char *&buffer_)
 		{
 			uint32_t value =
-				(((uint32_t)buffer_[0] << 24) |
-				((uint32_t)buffer_[1] << 16) |
-				((uint32_t)buffer_[2] << 8) |
-				((uint32_t)buffer_[3]));
+				(((uint32_t)buffer_[0]) << 24) |
+				(((uint32_t)buffer_[1]) << 16) |
+				(((uint32_t)buffer_[2]) << 8) |
+				((uint32_t)buffer_[3]);
 			buffer_ += sizeof(value);
 			return value;
 		}
@@ -83,7 +83,7 @@ namespace xraft
 			memcpy(buffer_, str.data(), str.size());
 			buffer_ += str.size();
 		}
-		std::string get_string(unsigned char *&buffer_)
+		inline std::string get_string(unsigned char *&buffer_)
 		{
 			auto len = get_uint32(buffer_);
 			std::string result((char*)buffer_, len);
@@ -91,14 +91,14 @@ namespace xraft
 			return std::move(result);
 		}
 		template <typename T>
-		typename std::enable_if<std::is_arithmetic<T>::value, std::size_t>::type 
+		inline typename std::enable_if<std::is_arithmetic<T>::value, std::size_t>::type 
 			get_sizeof(T)
 		{
 			return sizeof(T);
 		}
 
 		template <typename T>
-		typename std::enable_if<std::is_same<std::string,T>::value, std::size_t>::type
+		inline typename std::enable_if<std::is_same<std::string,T>::value, std::size_t>::type
 			get_sizeof(const T &t)
 		{
 			return sizeof(uint32_t) + t.size();

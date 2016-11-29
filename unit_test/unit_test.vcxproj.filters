@@ -40,6 +40,9 @@
     <ClInclude Include="..\include\raft\raft.hpp">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\raft\detail\macros.hpp">
+      <Filter>include\detail</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="include">
@@ -53,7 +56,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="unit_test.cpp">
+    <ClCompile Include="metadata.cpp">
+      <Filter>unit_test</Filter>
+    </ClCompile>
+    <ClCompile Include="filelog.cpp">
       <Filter>unit_test</Filter>
     </ClCompile>
   </ItemGroup>

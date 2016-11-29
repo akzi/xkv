@@ -12,10 +12,13 @@
 #include <fstream>
 #include <chrono>
 #include <cassert>
+#include <stdio.h>
+#include <algorithm>  
 #ifdef _MSC_VER
 #include<windows.h> 
 #endif
 
+#include "macros.hpp"
 #include "endec.hpp"
 #include "raft_proto.hpp"
 #include "utils.hpp"

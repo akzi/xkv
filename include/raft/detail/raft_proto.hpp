@@ -32,21 +32,34 @@ namespace xraft
 
 			std::size_t bytes() const
 			{
-				return endec::get_sizeof(index_) +
+				return
+					endec::get_sizeof(index_) +
 					endec::get_sizeof(term_) +
 					endec::get_sizeof(std::underlying_type<type>::type()) +
 					endec::get_sizeof(log_data_);
 			}
 			std::string to_string() const
 			{
-				std::string buffer_;
-				buffer_.resize(bytes());
-
-				return buffer_;
+				std::string buffer;
+				buffer.resize(bytes());
+				uint8_t *ptr = (uint8_t*)buffer.data();
+				endec::put_uint64(ptr, index_);
+				endec::put_uint64(ptr, term_);
+				endec::put_uint8(ptr, static_cast<uint8_t>(type_));
+				endec::put_string(ptr, log_data_);
+				return buffer;
 			}
-			void from_string(const std::string &buffer)
+			bool from_string(const std::string &buffer)
 			{
-				//todo decode buffer to log_entry
+				uint8_t *ptr = (uint8_t*)buffer.data();
+				log_data_.clear();
+				if (buffer.size() < bytes())
+					return false;
+				index_ = (int64_t)endec::get_uint64(ptr);
+				term_ = (int64_t)endec::get_uint64(ptr);
+				type_ = (type)endec::get_uint8(ptr);
+				log_data_ = endec::get_string(ptr);
+				return true;
 			}
 		};
 		struct raft_config
