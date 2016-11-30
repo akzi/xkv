@@ -114,10 +114,10 @@ namespace detail
 			return data_file_.tellp();
 		}
 		//rm file from disk.
-		void rm()
+		bool rm()
 		{
 			std::lock_guard<std::mutex> lock_guard(mtx_);
-			rm_on_lock();
+			return rm_on_lock();
 		}
 		bool truncate_suffix(int64_t index)
 		{

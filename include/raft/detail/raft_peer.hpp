@@ -18,8 +18,8 @@ namespace detail
 
 		};
 		struct config
-			
 		{
+			std::string raft_id_;
 			std::string peer_ip_;
 			int port_;
 		};
@@ -48,7 +48,8 @@ namespace detail
 		std::function<int64_t(void)> get_current_term_;
 		std::function<int64_t(void)> get_last_log_index_;
 		std::function<append_entries_request(int64_t)> build_append_entries_request_;
-		std::function<void(vote_response &&)> vote_response_;
+		std::function<vote_request()> build_vote_request_;
+		std::function<void(const vote_response &)> vote_response_callback_;
 		std::function<void(int64_t)> new_term_callback_;
 		std::function<void(std::vector<int64_t>)> append_entries_success_callback_;
 		config config_;
@@ -99,10 +100,13 @@ namespace detail
 				}
 			} while (true);
 		}
-		append_entries_response send_append_entries_request(
-				const append_entries_request &req,int timeout = 10000)
+		append_entries_response 
+			send_append_entries_request(const append_entries_request &req ,int timeout = 10000)
 		{
-
+			std::string buffer = rpc_send(req.to_string());
+			append_entries_response response;
+			response.from_string(buffer);
+			return std::move(response);
 		}
 		int64_t next_heartbeat_delay()
 		{
@@ -158,12 +162,21 @@ namespace detail
 		}
 		void do_election()
 		{
-
+			auto request = build_vote_request_();
+			std::string response = rpc_send(request.to_string());
+			vote_response _vote_response;
+			_vote_response.from_string(response);
+			vote_response_callback_(_vote_response);
+		}
+		std::string rpc_send(std::string &&request)
+		{
+			return   { };
 		}
 		void do_exist()
 		{
 			stop_ = true;
 		}
+
 		high_resolution_clock::time_point last_heart_beat_;
 		bool stop_ = false;
 		std::thread peer_thread_;

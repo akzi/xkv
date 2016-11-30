@@ -3,10 +3,10 @@ namespace xraft
 {
 	namespace detail
 	{
+		template<typename item = std::function<void()>>
 		class committer
 		{
 		public:
-			using item = std::function<void()>;
 			committer()
 			{
 				worker_ = std::thread([this] { 

@@ -7,9 +7,9 @@ namespace xraft
 	{
 	public:
 		using append_log_callback = std::function<void(bool)>;
-		using commit_entry_callback = std::function<void(std::string &&)>;
-		using install_snapshot_handle = std::function<void(std::ifstream &&)>;
-
+		using commit_entry_callback = std::function<void(std::string &&, int64_t)>;
+		using install_snapshot_callback = std::function<void(std::ifstream &)>;
+		using build_snapshot_callback = std::function<bool(const std::function<bool(const std::string &)>&, int64_t)>;
 		enum state
 		{
 			e_follower,
@@ -26,17 +26,29 @@ namespace xraft
 		}
 		void replicate(std::string &&data, append_log_callback&&callback)
 		{
+			do_relicate(std::move(data), std::move(callback));
+		}
+		void regist_commit_entry_callback(const commit_entry_callback &callback)
+		{
+			commit_entry_callback_ = callback;
+		}
+		void regist_build_snapshot_callback(const  build_snapshot_callback& callback)
+		{
+			build_snapshot_callback_ = callback;
+		}
+		void regist_install_snapshot_handle(const install_snapshot_callback &callback)
+		{
+			install_snapshot_callback_ = callback;
+		}
+	private:
+		void do_relicate(std::string &&data, append_log_callback&&callback)
+		{
 			int64_t index;
 			if (!log_.write(build_log_entry(std::move(data)), index))
 				callback(false);
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
 		}
-		void regist_commit_entry_callback(commit_entry_callback &&callback)
-		{
-			commit_entry_callback_ = callback;
-		}
-	private:
 		auto handle_append_entries_request(append_entries_request && request)
 		{
 			std::lock_guard<std::mutex> locker(mtx_);
@@ -99,7 +111,7 @@ namespace xraft
 					for (auto &itr : entries)
 					{
 						assert(itr.index_ == committed_index_ + 1);
-						commit_entry_callback_(std::move(itr.log_data_));
+						commit_entry_callback_(std::move(itr.log_data_),itr.index_);
 						++committed_index_;
 					}
 				});
@@ -190,24 +202,28 @@ namespace xraft
 		void load_snapshot()
 		{
 			snapshot_writer_.close();
-			snapshot_reader reader;
-			if (!reader.open(snapshot_writer_.get_snapshot_filepath()))
+			if (!snapshot_reader_.open(snapshot_writer_.get_snapshot_filepath()))
 			{
 				//todo process error;
 			}
-			snapshot_head head;
-			if (!reader.read_sanpshot_head(head))
-			{
-				//todo process error;
-			}
-			if (head.last_included_index_ > committed_index_)
-				committed_index_ = head.last_included_index_;
-			log_.truncate_suffix(head.last_included_index_);
+			commiter_.push([&] {
+				snapshot_head head;
+				if (!snapshot_reader_.read_sanpshot_head(head))
+				{
+					//todo process error;
+				}
+				install_snapshot_callback_(snapshot_reader_.get_snapshot_stream());;
+				log_.truncate_suffix(head.last_included_index_);
+
+				if (head.last_included_index_ > committed_index_)
+					committed_index_ = head.last_included_index_;
+			});
+			
 		}
 		void open_snapshot_writer(int64_t index)
 		{
-			if(functors::fs::mkdir()("data/snapshot/"))
-				snapshot_writer_.open("data/snapshot/"+std::to_string(index)+".SS");
+			if(functors::fs::mkdir()(snapshot_path_))
+				snapshot_writer_.open(snapshot_path_+std::to_string(index)+".SS");
 			else
 			{
 				//todo process Error;
@@ -302,6 +318,23 @@ namespace xraft
 			request.entries_.pop_front();
 			return std::move(request);
 		}
+		vote_request build_vote_request()
+		{
+			vote_request request;
+			request.candidate_ = raft_id_;
+			request.term_ = current_term_;
+			request.last_log_index_ = get_last_log_entry_index();
+			request.last_log_term_ = get_last_log_entry_term();
+			return request;
+		}
+		std::string get_snapshot_filepath()
+		{
+			auto files = functors::fs::ls_files()(snapshot_path_);
+			if (files.empty())
+				return	{};
+			std::sort(files.begin(), files.end(),std::greater<std::string>());
+			return files[0];
+		}
 		void append_entries_callback(const std::vector<int64_t> &indexs)
 		{
 			utils::lock_guard lock(mtx_);
@@ -320,6 +353,14 @@ namespace xraft
 					append_log_callbacks_.erase(item);
 				}
 			}
+		}
+		bool make_snapshot_callback(const std::function<bool(const std::string &)> &writer, int64_t index)
+		{
+			return build_snapshot_callback_(writer, index);
+		}
+		void make_snapshot_done_callback(int64_t index)
+		{
+			log_.truncate_prefix(index);
 		}
 		int64_t get_last_log_entry_term()
 		{
@@ -345,7 +386,7 @@ namespace xraft
 		int64_t last_snapshot_index_;
 		int64_t last_snapshot_term_;
 		int64_t current_term_;
-		int64_t committed_index_;
+		std::atomic_int64_t committed_index_;
 		std::string raft_id_;
 		std::string voted_for_;
 		std::string leader_id_;
@@ -353,8 +394,10 @@ namespace xraft
 		int64_t election_timer_id_;
 
 		commit_entry_callback commit_entry_callback_;
-		install_snapshot_handle install_snapshot_handle_;
 		snapshot_writer snapshot_writer_;
+		snapshot_reader snapshot_reader_;
+		build_snapshot_callback build_snapshot_callback_;
+		install_snapshot_callback install_snapshot_callback_;
 
 		metadata<> metadata_;
 		raft_config_mgr raft_config_mgr_;
@@ -365,6 +408,10 @@ namespace xraft
 		std::map<int64_t, append_log_callback_info> append_log_callbacks_;
 		detail::filelog log_;
 		detail::timer timer_;
-		committer commiter_;
+		snapshot_loader snapshot_loader_;
+		committer<> commiter_;
+
+		std::string base_path_;
+		std::string snapshot_path_ = "data/snapshot/";
 	};
 }
