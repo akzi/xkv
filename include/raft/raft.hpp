@@ -408,7 +408,6 @@ namespace xraft
 		std::map<int64_t, append_log_callback_info> append_log_callbacks_;
 		detail::filelog log_;
 		detail::timer timer_;
-		snapshot_loader snapshot_loader_;
 		committer<> commiter_;
 
 		std::string base_path_;
