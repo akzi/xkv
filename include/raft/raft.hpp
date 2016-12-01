@@ -40,7 +40,61 @@ namespace xraft
 		{
 			install_snapshot_callback_ = callback;
 		}
+		void init(raft_config config)
+		{
+			raft_config_mgr_.set(config.nodes_);
+			filelog_base_path_ = config.raftlog_base_path_;
+			metadata_base_path_ = config.metadata_base_path_;
+			snapshot_base_path_ = config.snapshot_base_path_;
+			append_log_timeout_ = config.append_log_timeout_;
+			election_timeout_ = config.election_timeout_;
+			state_ = e_follower;
+			snapshot_builder_.regist_build_snapshot_callback(
+							std::bind(&raft::make_snapshot_callback, this, 
+								std::placeholders::_1, std::placeholders::_2));
+			snapshot_builder_.regist_get_last_commit_index(
+							std::bind(&raft::get_last_log_entry_index,this));
+			snapshot_builder_.regist_get_log_entry_term_handle(
+							std::bind(&raft::get_last_log_entry_term, this));
+			snapshot_builder_.regist_get_log_start_index(
+							std::bind(&raft::get_log_start_index, this));
+			snapshot_builder_.set_snapshot_distance(1024);//for test
+
+			init_pees();
+		}
 	private:
+		void init_pees()
+		{
+			using namespace std::placeholders;
+			for (auto &itr: raft_config_mgr_.get_nodes())
+			{
+				pees_.emplace_back(new raft_peer);
+				raft_peer &peer = *(pees_.back());
+				peer.append_entries_success_callback_ = std::bind(&raft::append_entries_callback, this, _1);
+				peer.build_append_entries_request_ = std::bind(&raft::build_append_entries_request, this, _1);
+				peer.build_vote_request_ = std::bind(&raft::build_vote_request, this);
+				peer.vote_response_callback_ = std::bind(&raft::handle_vote_response, this, _1);
+				peer.new_term_callback_ = std::bind(&raft::handle_new_term, this, _1);
+				peer.get_current_term_ = [this] { return current_term_.load(); };
+				peer.get_last_log_index_ = std::bind(&raft::get_last_log_entry_index, this);
+				peer.connect_callback_ = std::bind(&raft::peer_connect_callback, this, _1, _2);
+				peer.myself_ = itr;
+				peer.send_cmd(raft_peer::cmd_t::e_connect);
+			}
+		}
+		void peer_connect_callback(raft_peer &peer, bool result)
+		{
+			auto result_str = result ? "connect success" : "connect failed";
+			std::cout <<
+				"IP:"<< 
+				peer.myself_.ip_ << 
+				" PORT:" << 
+				peer.myself_.port_ << 
+				"ID:" << 
+				peer.myself_.raft_id_<< 
+				result_str << 
+				std::endl;
+		}
 		void do_relicate(std::string &&data, append_log_callback&&callback)
 		{
 			int64_t index;
@@ -234,6 +288,11 @@ namespace xraft
 				//todo process Error;
 			}
 		}
+
+		void handle_new_term(int64_t new_term)
+		{
+			step_down(new_term);
+		}
 		void step_down(int64_t new_term)
 		{
 			if (current_term_ < new_term)
@@ -243,8 +302,15 @@ namespace xraft
 				voted_for_.clear();
 				update_Log_metadata();
 			}
+			if (state_ == state::e_candidate)
+			{
+				vote_responses_.clear();
+				interrupt_vote();
+			}
 			if (state_ == state::e_leader)
+			{
 				sleep_peer_threads();
+			}
 			state_ = state::e_follower;
 			set_election_timer();
 		}
@@ -256,6 +322,11 @@ namespace xraft
 				for (auto &itr : pees_)
 					itr->send_cmd(raft_peer::cmd_t::e_election);
 			});
+		}
+		void interrupt_vote()
+		{
+			for (auto &itr : pees_)
+				itr->send_cmd(raft_peer::cmd_t::e_interrupt_vote);
 		}
 		void sleep_peer_threads()
 		{
@@ -323,6 +394,14 @@ namespace xraft
 			request.entries_.pop_front();
 			return std::move(request);
 		}
+		void handle_vote_response(const vote_response &response)
+		{
+			if (state_ != e_candidate)
+				return;
+			vote_responses_.push_back(response);
+			if (response.term_ > current_term_)
+				step_down(response.term_);
+		}
 		vote_request build_vote_request()
 		{
 			vote_request request;
@@ -389,9 +468,9 @@ namespace xraft
 			}
 			return std::move(entry);
 		}
-		int64_t last_snapshot_index_;
-		int64_t last_snapshot_term_;
-		int64_t current_term_;
+		std::atomic_int64_t last_snapshot_index_;
+		std::atomic_int64_t last_snapshot_term_;
+		std::atomic_int64_t current_term_;
 		std::atomic_int64_t committed_index_;
 		std::string raft_id_;
 		std::string voted_for_;
@@ -400,23 +479,33 @@ namespace xraft
 		int64_t election_timer_id_;
 
 		commit_entry_callback commit_entry_callback_;
+
+		snapshot_builder snapshot_builder_;
 		snapshot_writer snapshot_writer_;
 		snapshot_reader snapshot_reader_;
 		build_snapshot_callback build_snapshot_callback_;
 		install_snapshot_callback install_snapshot_callback_;
 
-		metadata<> metadata_;
 		raft_config_mgr raft_config_mgr_;
-		int64_t append_log_timeout_ = 100000;//10 seconds;
+		int64_t append_log_timeout_ = 10000;//10 seconds;
 		std::vector<std::unique_ptr<raft_peer>> pees_;
 		state state_;
 		std::mutex mtx_;
 		std::map<int64_t, append_log_callback_info> append_log_callbacks_;
-		detail::filelog log_;
 		detail::timer timer_;
 		committer<> commiter_;
 
-		std::string base_path_;
+		metadata<> metadata_;
+		std::string metadata_base_path_;
+		std::string metadata_path_ = "data/metadata";
+
+		detail::filelog log_;
+		std::string filelog_path_ = "data/log";
+		std::string filelog_base_path_;
+
+		std::string snapshot_base_path_;
 		std::string snapshot_path_ = "data/snapshot/";
+
+		std::vector<vote_response>  vote_responses_;
 	};
 }

@@ -72,8 +72,8 @@ namespace xraft
 				if (buffer.size() != bytes())
 					return false;
 				term_ = (int64_t)endec::get_uint64(ptr);
-				vote_granted_ = (bool)endec::get_uint8(ptr);
-				log_ok_= (bool)endec::get_uint8(ptr);
+				vote_granted_ = endec::get_uint8(ptr)>0;
+				log_ok_= endec::get_uint8(ptr)>0;
 				return true;
 			}
 		};
@@ -139,7 +139,14 @@ namespace xraft
 				int port_ = 0;
 				std::string raft_id_;
 			};
-			std::vector<raft_node> nodes_;
+			using nodes = std::vector<raft_node>;
+			nodes nodes_;
+			raft_node myself_;
+			std::size_t append_log_timeout_;
+			std::size_t election_timeout_;
+			std::string raftlog_base_path_;
+			std::string snapshot_base_path_;
+			std::string metadata_base_path_;
 		};
 		struct append_entries_request
 		{
@@ -220,7 +227,7 @@ namespace xraft
 				uint8_t *ptr = (uint8_t*)buffer.data();
 				endec::put_uint64(ptr, term_);
 				endec::put_uint64(ptr, last_log_index_);
-				endec::put_uint8(ptr, (uint8_t)success_);
+				endec::put_bool(ptr, success_);
 				return buffer;
 			}
 			bool from_string(const std::string &buffer)
@@ -230,7 +237,7 @@ namespace xraft
 					return false;
 				term_ = (int64_t)endec::get_uint64(ptr);
 				last_log_index_ = (int64_t)endec::get_uint64(ptr);
-				success_ = (bool)endec::get_uint8(ptr);
+				success_ = endec::get_bool(ptr);
 				return true;
 			}
 		};
@@ -265,7 +272,7 @@ namespace xraft
 				endec::put_uint64(ptr, last_snapshot_index_);
 				endec::put_uint64(ptr, last_included_term_);
 				endec::put_uint64(ptr, offset_);
-				endec::put_uint8 (ptr, (uint8_t)done_);
+				endec::put_bool(ptr, done_);
 				endec::put_string(ptr, data_);
 				return buffer;
 			}
@@ -279,7 +286,7 @@ namespace xraft
 				last_snapshot_index_ = (int64_t)endec::get_uint64(ptr);
 				last_included_term_ = (int64_t)endec::get_uint64(ptr);
 				offset_ = (int64_t)endec::get_uint64(ptr);
-				done_ = (bool)endec::get_uint8(ptr);
+				done_ = endec::get_bool(ptr);
 				data_ = endec::get_string(ptr);
 				return true;
 			}

@@ -3,6 +3,19 @@ namespace xraft
 {
 	namespace endec
 	{
+		inline void put_bool(unsigned char *&buffer_, bool value)
+		{
+			*buffer_ = value ? 1:0;
+			buffer_ += sizeof(char);
+		}
+		
+		inline bool get_bool(unsigned char *&buffer_)
+		{
+			uint8_t value = buffer_[0];
+			buffer_ += sizeof(value);
+			return value > 0;
+		}
+
 		inline void put_uint8(unsigned char *&buffer_, uint8_t value)
 		{
 			*buffer_ = value;

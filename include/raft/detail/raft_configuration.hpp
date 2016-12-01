@@ -12,10 +12,18 @@ namespace xraft
 			}
 			int get_majority()
 			{
-				return (int)current_config_.nodes_.size() / 2 + 1;
+				return (int)nodes_.size() / 2 + 1;
+			}
+			void set(raft_config::nodes nodes)
+			{
+				nodes_ = nodes;
+			}
+			raft_config::nodes &get_nodes()
+			{
+				return nodes_;
 			}
 		private:
-			raft_config current_config_;
+			raft_config::nodes nodes_;
 		};
 	}
 }

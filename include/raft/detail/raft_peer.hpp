@@ -13,27 +13,16 @@ namespace detail
 			e_connect,
 			e_election,
 			e_append_entries,
+			e_interrupt_vote,
 			e_sleep,
 			e_exit,
 
 		};
-		struct config
-		{
-			std::string raft_id_;
-			std::string peer_ip_;
-			int port_;
-		};
-
 		raft_peer()
 			:peer_thread_([this] { run(); })
 		{
 
 		}
-		void init(config _config)
-		{
-			config_ = _config;
-		}
-	
 		void send_cmd(cmd_t cmd)
 		{
 			cmd_queue_.push(std::move(cmd));
@@ -51,8 +40,8 @@ namespace detail
 		std::function<vote_request()> build_vote_request_;
 		std::function<void(const vote_response &)> vote_response_callback_;
 		std::function<void(int64_t)> new_term_callback_;
-		std::function<void(std::vector<int64_t>)> append_entries_success_callback_;
-		config config_;
+		std::function<void(const std::vector<int64_t>&)> append_entries_success_callback_;
+		raft_config::raft_node myself_;
 	private:
 		void run()
 		{
@@ -93,9 +82,9 @@ namespace detail
 					match_index_ = request.prev_log_index_ + request.entries_.size();
 					next_index_ = match_index_ + 1;
 				}
-				catch (...)
+				catch (std::exception &e)
 				{
-					//todo process error;
+					std::cout << e.what() << std::endl;
 					break;
 				}
 			} while (true);
