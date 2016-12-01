@@ -115,7 +115,7 @@ namespace xraft
 		public:
 			using get_last_commit_index_handle = std::function<int64_t()>;
 			using get_log_start_index_handle = std::function<int64_t()>;
-			using build_snapshot_callback = std::function<bool(int64_t, const std::function<bool(const std::string &)> &)>;
+			using build_snapshot_callback = std::function<bool(const std::function<bool(const std::string &)>&, int64_t)>;
 			using build_snapshot_done_callback = std::function<void(int64_t)>;
 			using get_log_entry_term_handle = std::function<int64_t(int64_t)>;
 
@@ -163,12 +163,11 @@ namespace xraft
 						head.last_included_term_ = get_log_entry_term_(commit_index);
 						snapshot_writer writer;
 						writer.write_sanpshot_head(head);
-						auto result = build_snapshot_(commit_index, 
-							[&writer](const std::string &buffer) 
+						auto result = build_snapshot_([&writer](const std::string &buffer) 
 						{
 							writer.write(buffer);
 							return true; 
-						});
+						}, commit_index);
 						if (result == false)
 						{
 							//todo log error

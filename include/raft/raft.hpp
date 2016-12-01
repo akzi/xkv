@@ -6,7 +6,7 @@ namespace xraft
 	class raft
 	{
 	public:
-		using append_log_callback = std::function<void(bool)>;
+		using append_log_callback = std::function<void(bool, int64_t)>;
 		using commit_entry_callback = std::function<void(std::string &&, int64_t)>;
 		using install_snapshot_callback = std::function<void(std::ifstream &)>;
 		using build_snapshot_callback = std::function<bool(const std::function<bool(const std::string &)>&, int64_t)>;
@@ -45,7 +45,12 @@ namespace xraft
 		{
 			int64_t index;
 			if (!log_.write(build_log_entry(std::move(data)), index))
-				callback(false);
+			{
+				append_log_callback handle;
+				commiter_.push([handle = std::move(callback)] {
+					handle(false, 0);
+				});
+			}
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
 		}
@@ -269,7 +274,7 @@ namespace xraft
 					:waits_(waits),
 					timer_id_(timer_id),
 					callback_(callback){}
-
+			int64_t index_;
 			int waits_;
 			int64_t timer_id_;
 			append_log_callback callback_;
@@ -294,7 +299,7 @@ namespace xraft
 				if (itr == append_log_callbacks_.end())
 					return;
 				append_log_callback func;
-				commiter_.push([func = std::move(itr->second.callback_)]{ func(false); });
+				commiter_.push([func = std::move(itr->second.callback_)]{ func(false, 0); });
 				append_log_callbacks_.erase(itr);
 			});
 		}
@@ -349,7 +354,8 @@ namespace xraft
 					timer_.cancel(item->second.timer_id_);
 					committed_index_ = item->first;
 					append_log_callback func;
-					commiter_.push([func = std::move(item->second.callback_),this]{func(true); });
+					int64_t index_ = committed_index_;
+					commiter_.push([func = std::move(item->second.callback_),this, index_]{func(true, index_); });
 					append_log_callbacks_.erase(item);
 				}
 			}
