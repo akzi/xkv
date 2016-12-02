@@ -131,6 +131,7 @@ namespace xraft
 				leader_id_ = request.leader_id_;
 				//todo log Warm
 			}
+			set_election_timer();
 			if (request.prev_log_term_ == get_last_log_entry_term() &&
 				request.prev_log_index_ > get_last_log_entry_index())
 				return response;
@@ -154,7 +155,8 @@ namespace xraft
 						if (get_log_entry(itr.index_).term_ == itr.term_)
 							continue;
 						assert(committed_index_ < itr.index_);
-						log_.truncate_suffix(itr.index_ - 1);
+						log_.truncate_suffix(itr.index_);
+						check_log = false;
 					}
 				}
 				int64_t index;
@@ -199,8 +201,7 @@ namespace xraft
 				}
 			}
 			response.term_ = current_term_;
-			response.vote_granted_ = 
-				(request.term_ == current_term_ && 
+			response.vote_granted_ = (request.term_ == current_term_ && 
 					voted_for_ == request.candidate_);
 			response.log_ok_ = is_ok;
 			return response;
@@ -316,8 +317,8 @@ namespace xraft
 		}
 		void set_election_timer()
 		{
-			timer_.cancel(election_timer_id_);
-			timer_.set_timer(election_timeout_ ,[this] {
+			cancel_election_timer();
+			election_timer_id_ = timer_.set_timer(election_timeout_ ,[this] {
 				std::lock_guard<std::mutex> lock(mtx_);
 				for (auto &itr : pees_)
 					itr->send_cmd(raft_peer::cmd_t::e_election);
@@ -339,8 +340,7 @@ namespace xraft
 		}
 		struct append_log_callback_info
 		{
-			append_log_callback_info(int waits, 
-				int64_t timer_id, 
+			append_log_callback_info(int waits, int64_t timer_id, 
 				append_log_callback && callback)
 					:waits_(waits),
 					timer_id_(timer_id),
@@ -397,10 +397,35 @@ namespace xraft
 		void handle_vote_response(const vote_response &response)
 		{
 			if (state_ != e_candidate)
+			{
 				return;
-			vote_responses_.push_back(response);
+			}
+			if (response.term_ < current_term_)
+			{
+				return;
+			}
 			if (response.term_ > current_term_)
 				step_down(response.term_);
+			vote_responses_.push_back(response);
+			int votes = 1;//mysql 
+			for (auto &itr : vote_responses_)
+				if (itr.vote_granted_) votes++;
+			if (votes >= raft_config_mgr_.get_majority())
+			{
+				vote_responses_.clear();
+				become_leader();
+			}
+		}
+		void become_leader()
+		{
+			state_ = e_leader;
+			cancel_election_timer();
+			for (auto &itr : pees_)
+				itr->send_cmd(raft_peer::cmd_t::e_append_entries);
+		}
+		void cancel_election_timer()
+		{
+			timer_.cancel(election_timer_id_);
 		}
 		vote_request build_vote_request()
 		{
@@ -434,7 +459,7 @@ namespace xraft
 					committed_index_ = item->first;
 					append_log_callback func;
 					int64_t index_ = committed_index_;
-					commiter_.push([func = std::move(item->second.callback_),this, index_]{func(true, index_); });
+					commiter_.push([func = std::move(item->second.callback_),this, index_]{ func(true, index_); });
 					append_log_callbacks_.erase(item);
 				}
 			}

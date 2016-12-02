@@ -42,25 +42,40 @@ namespace detail
 		std::function<void(int64_t)> new_term_callback_;
 		std::function<void(const std::vector<int64_t>&)> append_entries_success_callback_;
 		raft_config::raft_node myself_;
+		std::int64_t heatbeat_inteval_;
 	private:
 		void run()
 		{
 			do
 			{
 				if (!try_execute_cmd())
-					do_sleep(0);
+				{
+					if (!send_heartbeat_ )
+						do_sleep(next_heartbeat_delay());
+					else
+						do_sleep(0);
+				}
 			} while (stop_);
 		}
 		void do_append_entries()
 		{
+			next_index_ = 0;
+			match_index_ = 0;
+			send_heartbeat_ = false;
 			do
 			{
 				try
 				{
-					try_execute_cmd();
+					if (try_execute_cmd())
+						break;
 					int64_t index = get_last_log_index_();
 					if (index == match_index_ && send_heartbeat_)
+					{
+						send_heartbeat_ = false;
 						break;
+					}
+					if (!next_index_)
+						next_index_ = index;
 					auto request = build_append_entries_request_(next_index_);
 					auto response = send_append_entries_request(request);
 					update_heartbeat_time();
@@ -79,7 +94,7 @@ namespace detail
 					for (auto &itr : request.entries_)
 						indexs.push_back(itr.index_);
 					append_entries_success_callback_(indexs);
-					match_index_ = request.prev_log_index_ + request.entries_.size();
+					match_index_ = response.last_log_index_;
 					next_index_ = match_index_ + 1;
 				}
 				catch (std::exception &e)
@@ -100,14 +115,13 @@ namespace detail
 		int64_t next_heartbeat_delay()
 		{
 			auto delay = high_resolution_clock::now() - last_heart_beat_;
-			return duration_cast<milliseconds>(delay).count();
+			return std::abs(heatbeat_inteval_ - duration_cast<milliseconds>(delay).count());
 		}
 		bool try_execute_cmd()
 		{
-			cmd_t cmd;
-			if (!cmd_queue_.pop(cmd))
+			if (!cmd_queue_.pop(cmd_))
 				return false;
-			switch (cmd)
+			switch (cmd_)
 			{
 			case cmd_t::e_connect:
 				do_connect();
@@ -129,7 +143,7 @@ namespace detail
 			}
 			return true;
 		}
-		void do_sleep(int milliseconds = 0)
+		void do_sleep(int64_t milliseconds = 0)
 		{
 			std::unique_lock<std::mutex> lock(mtx_);
 			if(!milliseconds)
@@ -179,6 +193,7 @@ namespace detail
 		int64_t next_index_ = 0;
 
 		bool send_heartbeat_ = false;
+		cmd_t cmd_;
 	};
 }
 }
