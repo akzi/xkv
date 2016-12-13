@@ -18,9 +18,10 @@ namespace detail
 			e_exit,
 
 		};
-		raft_peer(xsimple_rpc::rpc_proactor_pool &pool)
+		raft_peer(xsimple_rpc::rpc_proactor_pool &pool, 
+				  detail::raft_config::raft_node node)
 			:rpc_proactor_pool_(pool),
-			peer_thread_([this] { run(); })
+			myself_(node)
 		{
 
 		}
@@ -33,6 +34,16 @@ namespace detail
 		{
 			utils::lock_guard locker(mtx_);
 			cv_.notify_one();
+		}
+		void start()
+		{
+			peer_thread_ = std::thread([this] {  run(); });
+			peer_thread_.detach();
+		}
+		void stop()
+		{
+			stop_ = true;
+			notify();
 		}
 		std::function<void(raft_peer&, bool)> connect_callback_;
 		std::function<int64_t(void)> get_current_term_;
@@ -51,10 +62,12 @@ namespace detail
 			{
 				if (!try_execute_cmd())
 				{
+					if(!check_rpc())
+						continue;
 					if (!send_heartbeat_ )
 						do_sleep(next_heartbeat_delay());
 					else
-						do_sleep(0);
+						do_sleep(10000);
 				}
 			} while (!stop_);
 		}
@@ -110,15 +123,12 @@ namespace detail
 		{
 			if (!check_rpc())
 				throw std::runtime_error("rpc is connected");
-			try
+			struct RPC
 			{
-				DEFINE_RPC_PROTO(append_entries_request_rpc, append_entries_response(append_entries_request));
-				return rpc_client_->rpc_call<append_entries_request_rpc>(req);
-			}
-			catch (const std::exception& e)
-			{
-				std::cout << e.what() << std::endl;
-			}
+				DEFINE_RPC_PROTO(append_entries_request_rpc, 
+					append_entries_response(append_entries_request));
+			};
+			return rpc_client_->rpc_call<RPC::append_entries_request_rpc>(req);
 		}
 		int64_t next_heartbeat_delay()
 		{

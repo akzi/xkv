@@ -13,7 +13,7 @@ XTEST_SUITE(raft)
 		config.raftlog_base_path_ = "/data/log/";
 		config.snapshot_base_path_ = "/data/snapshot/";
 		config.myself_ = {"127.0.0.1",9001,"9001"};
-		config.nodes_ = { {"127.0.0.1", 9002, "9002"}/*,{ "127.0.0.1", 9003, "9003" } */};
+		config.nodes_ = { {"127.0.0.1", 9001, "9001"}/*,{ "127.0.0.1", 9003, "9003" } */};
 		
 		xraft::raft raft;
 		raft.init(config);

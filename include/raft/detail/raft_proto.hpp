@@ -82,6 +82,7 @@ namespace xraft
 			struct raft_node
 			{
 				raft_node() {}
+				raft_node(const raft_node &) = default;
 				raft_node(
 					std::string ip,
 					int port,

@@ -44,16 +44,22 @@ namespace xraft
 		void init(raft_config config)
 		{
 			state_ = e_follower;
+			init_rpc();
 			init_config(config);
 			init_snapshot_builder();
-			init_rpc();
-			init_pees();
-			set_election_timer();
+ 			init_pees();
+			init_timer();
+ 			set_election_timer();
 		}
 	private:
+		void init_timer()
+		{
+			timer_.start();
+		}
 		void init_config(raft_config config)
 		{
 			raft_config_mgr_.set(config.nodes_);
+			mysql_ = config.myself_;
 			filelog_base_path_ = config.raftlog_base_path_;
 			metadata_base_path_ = config.metadata_base_path_;
 			snapshot_base_path_ = config.snapshot_base_path_;
@@ -92,7 +98,7 @@ namespace xraft
 			using namespace std::placeholders;
 			for (auto &itr: raft_config_mgr_.get_nodes())
 			{
-				pees_.emplace_back(new raft_peer(rpc_proactor_pool_));
+				pees_.emplace_back(new raft_peer(rpc_proactor_pool_, itr));
 				raft_peer &peer = *(pees_.back());
 				peer.append_entries_success_callback_ = std::bind(&raft::append_entries_callback, this, _1);
 				peer.build_append_entries_request_ = std::bind(&raft::build_append_entries_request, this, _1);
@@ -102,7 +108,7 @@ namespace xraft
 				peer.get_current_term_ = [this] { return current_term_.load(); };
 				peer.get_last_log_index_ = std::bind(&raft::get_last_log_entry_index, this);
 				peer.connect_callback_ = std::bind(&raft::peer_connect_callback, this, _1, _2);
-				peer.myself_ = itr;
+				peer.start();
 				peer.send_cmd(raft_peer::cmd_t::e_connect);
 			}
 		}
@@ -415,7 +421,7 @@ namespace xraft
 			append_entries_request request;
 			request.entries_ = log_.get_log_entries(index - 1);
 			request.leader_commit_ = committed_index_;
-			request.leader_id_ = raft_id_;
+			request.leader_id_ = mysql_.raft_id_;
 			request.prev_log_index_ = request.entries_.size() ? (request.entries_.front().index_) : 0;
 			request.prev_log_term_ = request.entries_.size() ? (request.entries_.front().term_) : 0;
 			request.entries_.pop_front();
@@ -457,7 +463,7 @@ namespace xraft
 		vote_request build_vote_request()
 		{
 			vote_request request;
-			request.candidate_ = raft_id_;
+			request.candidate_ = mysql_.raft_id_;
 			request.term_ = current_term_;
 			request.last_log_index_ = get_last_log_entry_index();
 			request.last_log_term_ = get_last_log_entry_term();
@@ -530,7 +536,7 @@ namespace xraft
 		std::atomic_int64_t last_snapshot_term_;
 		std::atomic_int64_t current_term_;
 		std::atomic_int64_t committed_index_;
-		std::string raft_id_;
+		detail::raft_config::raft_node mysql_;
 		std::string voted_for_;
 		std::string leader_id_;
 		int64_t election_timeout_ = 10000;
@@ -565,7 +571,5 @@ namespace xraft
 		std::string snapshot_path_ = "data/snapshot/";
 
 		std::vector<vote_response>  vote_responses_;
-
-	
 	};
 }
