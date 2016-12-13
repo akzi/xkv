@@ -62,6 +62,7 @@ namespace xraft
 						continue;
 					}
 					auto action = std::move(itr->second.second);
+					actions_.erase(itr);
 					lock.unlock();
 					action();
 				} while (!stop_);

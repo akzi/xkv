@@ -18,8 +18,9 @@ namespace detail
 			e_exit,
 
 		};
-		raft_peer()
-			:peer_thread_([this] { run(); })
+		raft_peer(xsimple_rpc::rpc_proactor_pool &pool)
+			:rpc_proactor_pool_(pool),
+			peer_thread_([this] { run(); })
 		{
 
 		}
@@ -55,7 +56,7 @@ namespace detail
 					else
 						do_sleep(0);
 				}
-			} while (stop_);
+			} while (!stop_);
 		}
 		void do_append_entries()
 		{
@@ -107,15 +108,26 @@ namespace detail
 		append_entries_response 
 			send_append_entries_request(const append_entries_request &req ,int timeout = 10000)
 		{
-			std::string buffer = rpc_send(req.to_string());
-			append_entries_response response;
-			response.from_string(buffer);
-			return std::move(response);
+			if (!check_rpc())
+				throw std::runtime_error("rpc is connected");
+			try
+			{
+				DEFINE_RPC_PROTO(append_entries_request_rpc, append_entries_response(append_entries_request));
+				return rpc_client_->rpc_call<append_entries_request_rpc>(req);
+			}
+			catch (const std::exception& e)
+			{
+				std::cout << e.what() << std::endl;
+			}
 		}
 		int64_t next_heartbeat_delay()
 		{
-			auto delay = high_resolution_clock::now() - last_heart_beat_;
-			return std::abs(heatbeat_inteval_ - duration_cast<milliseconds>(delay).count());
+			if (rpc_client_)
+			{
+				auto delay = high_resolution_clock::now() - last_heart_beat_;
+				return std::abs(heatbeat_inteval_ - duration_cast<milliseconds>(delay).count());
+			}
+			return 0;
 		}
 		bool try_execute_cmd()
 		{
@@ -160,29 +172,51 @@ namespace detail
 		}
 		void do_connect()
 		{
-			//todo rpc connect
-			connect_callback_(*this, true);
+			try
+			{
+				rpc_client_.reset(new xsimple_rpc::client(
+					rpc_proactor_pool_.connect(myself_.ip_, myself_.port_, 0)));
+				connect_callback_(*this, true);
+			}
+			catch (const std::exception &e)
+			{
+				std::cout << e.what() << std::endl;
+			}
+		}
+		bool check_rpc()
+		{
+			if (!rpc_client_)
+				do_connect();
+			return !!rpc_client_;
 		}
 		void do_election()
 		{
-			auto request = build_vote_request_();
-			std::string response = rpc_send(request.to_string());
-			vote_response _vote_response;
-			_vote_response.from_string(response);
-			vote_response_callback_(_vote_response);
+			if (!check_rpc())
+				return;
+			auto req = build_vote_request_();
+			try
+			{
+				struct RPC
+				{ 
+					DEFINE_RPC_PROTO(vote_request, detail::vote_response(detail::vote_request));
+				};
+				auto resp = rpc_client_->rpc_call<RPC::vote_request>(req);
+				vote_response_callback_(resp);
+			}
+			catch (const std::exception& e)
+			{
+				std::cout << e.what() << std::endl;
+			}
 		}
-		std::string rpc_send(std::string &&request)
-		{
-			return   { };
-		}
+
 		void do_exist()
 		{
 			stop_ = true;
 		}
-
+		xsimple_rpc::rpc_proactor_pool &rpc_proactor_pool_;
+		std::unique_ptr<xsimple_rpc::client> rpc_client_;
 		high_resolution_clock::time_point last_heart_beat_;
 		bool stop_ = false;
-		std::thread peer_thread_;
 		std::mutex mtx_;
 		std::condition_variable cv_;
 
@@ -194,6 +228,7 @@ namespace detail
 
 		bool send_heartbeat_ = false;
 		cmd_t cmd_;
+		std::thread peer_thread_;
 	};
 }
 }

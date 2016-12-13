@@ -1,9 +1,9 @@
-#include "../../xtest/include/xtest.hpp"
 #include "../include/raft/raft.hpp"
+#include "../../xtest/include/xtest.hpp"
 
 using namespace xraft;
 using namespace xraft::detail;
-#if 1
+#if 0
 
 XTEST_SUITE(filelog)
 {

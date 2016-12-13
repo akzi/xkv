@@ -6,6 +6,7 @@ namespace xraft
 	class raft
 	{
 	public:
+		using raft_config = detail::raft_config;
 		using append_log_callback = std::function<void(bool, int64_t)>;
 		using commit_entry_callback = std::function<void(std::string &&, int64_t)>;
 		using install_snapshot_callback = std::function<void(std::ifstream &)>;
@@ -17,8 +18,8 @@ namespace xraft
 			e_leader
 		};
 		raft()
+			:rpc_server_(rpc_proactor_pool_)
 		{
-
 		}
 		bool check_leader()
 		{
@@ -42,33 +43,56 @@ namespace xraft
 		}
 		void init(raft_config config)
 		{
+			state_ = e_follower;
+			init_config(config);
+			init_snapshot_builder();
+			init_rpc();
+			init_pees();
+			set_election_timer();
+		}
+	private:
+		void init_config(raft_config config)
+		{
 			raft_config_mgr_.set(config.nodes_);
 			filelog_base_path_ = config.raftlog_base_path_;
 			metadata_base_path_ = config.metadata_base_path_;
 			snapshot_base_path_ = config.snapshot_base_path_;
 			append_log_timeout_ = config.append_log_timeout_;
 			election_timeout_ = config.election_timeout_;
-			state_ = e_follower;
+		}
+		void init_snapshot_builder()
+		{
 			snapshot_builder_.regist_build_snapshot_callback(
-							std::bind(&raft::make_snapshot_callback, this, 
-								std::placeholders::_1, std::placeholders::_2));
+				std::bind(&raft::make_snapshot_callback, this,
+					std::placeholders::_1, std::placeholders::_2));
 			snapshot_builder_.regist_get_last_commit_index(
-							std::bind(&raft::get_last_log_entry_index,this));
+				std::bind(&raft::get_last_log_entry_index, this));
 			snapshot_builder_.regist_get_log_entry_term_handle(
-							std::bind(&raft::get_last_log_entry_term, this));
+				std::bind(&raft::get_last_log_entry_term, this));
 			snapshot_builder_.regist_get_log_start_index(
-							std::bind(&raft::get_log_start_index, this));
+				std::bind(&raft::get_log_start_index, this));
 			snapshot_builder_.set_snapshot_distance(1024);//for test
 
-			init_pees();
+			snapshot_builder_.start();
 		}
-	private:
+		void init_rpc()
+		{
+			rpc_server_.regist("append_entries_request", [this]( append_entries_request &req) { 
+				return handle_append_entries_request(req); 
+			}).regist("vote_request", [this](const vote_request &req) { 
+				return handle_vote_request(req); 
+			}).regist("install_snapshot_request", [this](install_snapshot_request &req) { 
+				return handle_install_snapshot(req); 
+			}).bind("127.0.0.1", 9001);
+
+			rpc_proactor_pool_.start();
+		}
 		void init_pees()
 		{
 			using namespace std::placeholders;
 			for (auto &itr: raft_config_mgr_.get_nodes())
 			{
-				pees_.emplace_back(new raft_peer);
+				pees_.emplace_back(new raft_peer(rpc_proactor_pool_));
 				raft_peer &peer = *(pees_.back());
 				peer.append_entries_success_callback_ = std::bind(&raft::append_entries_callback, this, _1);
 				peer.build_append_entries_request_ = std::bind(&raft::build_append_entries_request, this, _1);
@@ -108,7 +132,8 @@ namespace xraft
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
 		}
-		auto handle_append_entries_request(append_entries_request && request)
+		append_entries_response 
+			handle_append_entries_request(append_entries_request & request)
 		{
 			std::lock_guard<std::mutex> locker(mtx_);
 			append_entries_response response;
@@ -178,6 +203,7 @@ namespace xraft
 				});
 			}
 			set_election_timer();
+			return response;
 		}
 		vote_response handle_vote_request(const vote_request &request)
 		{
@@ -206,7 +232,8 @@ namespace xraft
 			response.log_ok_ = is_ok;
 			return response;
 		}
-		auto handle_install_snapshot (install_snapshot_request &request)
+		install_snapshot_response
+			handle_install_snapshot (install_snapshot_request &request)
 		{
 			install_snapshot_response response;
 			response.term_ = current_term_;
@@ -459,7 +486,9 @@ namespace xraft
 					committed_index_ = item->first;
 					append_log_callback func;
 					int64_t index_ = committed_index_;
-					commiter_.push([func = std::move(item->second.callback_),this, index_]{ func(true, index_); });
+					commiter_.push([func = std::move(item->second.callback_),this, index_]{ 
+						func(true, index_); 
+					});
 					append_log_callbacks_.erase(item);
 				}
 			}
@@ -493,6 +522,10 @@ namespace xraft
 			}
 			return std::move(entry);
 		}
+		//rpc
+		xsimple_rpc::rpc_proactor_pool rpc_proactor_pool_;
+		xsimple_rpc::rpc_server rpc_server_;
+
 		std::atomic_int64_t last_snapshot_index_;
 		std::atomic_int64_t last_snapshot_term_;
 		std::atomic_int64_t current_term_;
@@ -532,5 +565,7 @@ namespace xraft
 		std::string snapshot_path_ = "data/snapshot/";
 
 		std::vector<vote_response>  vote_responses_;
+
+	
 	};
 }

@@ -15,6 +15,11 @@
 #include <stdio.h>
 #include <algorithm>  
 #include <atomic>
+
+
+//deps
+#include "../../../xsimple_rpc/include/xsimple_rpc.hpp"
+
 #ifdef _MSC_VER
 #include<windows.h> 
 #endif

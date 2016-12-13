@@ -62,5 +62,8 @@
     <ClCompile Include="filelog.cpp">
       <Filter>unit_test</Filter>
     </ClCompile>
+    <ClCompile Include="raft.cpp">
+      <Filter>unit_test</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

@@ -1,7 +1,6 @@
-#include "../../xtest/include/xtest.hpp"
-#include "../include/raft/raft.hpp"
-xtest_run;
 #if 0
+#include "../include/raft/raft.hpp"
+#include "../../xtest/include/xtest.hpp"
 
 XTEST_SUITE(metadata)
 {

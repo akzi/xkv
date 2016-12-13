@@ -477,6 +477,7 @@ namespace detail
 			std::lock_guard<std::mutex> lock(mtx_);
 			if (log_entries_cache_.size())
 				return log_entries_cache_.back().term_;
+			return 0;
 		}
 		int64_t get_last_index()
 		{

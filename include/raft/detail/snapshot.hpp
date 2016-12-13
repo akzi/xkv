@@ -120,7 +120,6 @@ namespace xraft
 			using get_log_entry_term_handle = std::function<int64_t(int64_t)>;
 
 			snapshot_builder()
-				:worker_([this] {run();})
 			{
 				
 			}
@@ -139,6 +138,12 @@ namespace xraft
 			void regist_build_snapshot_callback(build_snapshot_callback callback)
 			{
 				build_snapshot_ = callback;
+			}
+			void start()
+			{
+				worker_ = std::thread([this] { 
+					run();
+				});
 			}
 			void stop()
 			{
@@ -177,6 +182,7 @@ namespace xraft
 						build_snapshot_done_(commit_index);
 						//todo log snapshot done
 					}
+					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 				} while (is_stop_ == false);
 			}
 			get_log_entry_term_handle get_log_entry_term_;
