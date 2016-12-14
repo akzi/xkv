@@ -108,6 +108,8 @@ namespace xraft
 				peer.get_current_term_ = [this] { return current_term_.load(); };
 				peer.get_last_log_index_ = std::bind(&raft::get_last_log_entry_index, this);
 				peer.connect_callback_ = std::bind(&raft::peer_connect_callback, this, _1, _2);
+				peer.get_snapshot_path_ = std::bind(&raft::get_snapshot_filepath, this);
+				peer.raft_id_ = mysql_.raft_id_;
 				peer.start();
 				peer.send_cmd(raft_peer::cmd_t::e_connect);
 			}

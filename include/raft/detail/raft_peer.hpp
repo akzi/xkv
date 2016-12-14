@@ -53,8 +53,9 @@ namespace detail
 		std::function<void(const vote_response &)> vote_response_callback_;
 		std::function<void(int64_t)> new_term_callback_;
 		std::function<void(const std::vector<int64_t>&)> append_entries_success_callback_;
+		std::function<std::string()> get_snapshot_path_;
+		std::string raft_id_;
 		raft_config::raft_node myself_;
-		std::int64_t heatbeat_inteval_;
 	private:
 		void run()
 		{
@@ -91,6 +92,11 @@ namespace detail
 					if (!next_index_)
 						next_index_ = index;
 					auto request = build_append_entries_request_(next_index_);
+					if (request.entries_.empty() && next_index_)
+					{
+						send_install_snapshot_req();
+						continue;
+					}
 					auto response = send_append_entries_request(request);
 					update_heartbeat_time();
 					if (!response.success_)
@@ -118,6 +124,7 @@ namespace detail
 				}
 			} while (true);
 		}
+
 		append_entries_response 
 			send_append_entries_request(const append_entries_request &req ,int timeout = 10000)
 		{
@@ -125,10 +132,57 @@ namespace detail
 				throw std::runtime_error("rpc is connected");
 			struct RPC
 			{
-				DEFINE_RPC_PROTO(append_entries_request_rpc, 
-					append_entries_response(append_entries_request));
+				DEFINE_RPC_PROTO(append_entries_request, 
+					detail::append_entries_response(detail::append_entries_request));
 			};
-			return rpc_client_->rpc_call<RPC::append_entries_request_rpc>(req);
+			return rpc_client_->rpc_call<RPC::append_entries_request>(req);
+		}
+
+		void send_install_snapshot_req()
+		{
+			struct RPC
+			{
+				DEFINE_RPC_PROTO(append_entries_request,
+					detail::install_snapshot_response(detail::install_snapshot_request));
+			};
+			auto filepath = get_snapshot_path_();
+			snapshot_reader reader;
+			
+			if (!reader.open(filepath))
+			{
+				std::cout << "open file :" + filepath << " error" << std::endl;
+				return;
+			}
+			snapshot_head head;
+			reader.read_sanpshot_head(head);
+
+			std::ifstream &file = reader.get_snapshot_stream();
+			do
+			{
+				install_snapshot_request request;
+				request.term_ = get_current_term_();
+				request.leader_id_ = raft_id_;
+				request.last_included_term_ = head.last_included_term_;
+				request.last_snapshot_index_ = head.last_included_index_;
+				request.offset_ = file.tellg();
+				request.data_.resize(20 * 1024);
+				file.read((char*)request.data_.data(), request.data_.size());
+				request.done_ = file.eof();
+
+				auto resp = rpc_client_->rpc_call<RPC::append_entries_request>(request);
+				if (resp.term_ > request.term_)
+				{
+					new_term_callback_(resp.term_);
+					return;
+				}
+				else if (resp.bytes_stored_ != file.tellg())
+				{
+					file.seekg(resp.bytes_stored_, std::ios::beg);
+				}
+				else if (request.done_)
+					break;
+
+			} while (!stop_);
 		}
 		int64_t next_heartbeat_delay()
 		{
@@ -223,6 +277,8 @@ namespace detail
 		{
 			stop_ = true;
 		}
+		std::int64_t heatbeat_inteval_;
+
 		xsimple_rpc::rpc_proactor_pool &rpc_proactor_pool_;
 		std::unique_ptr<xsimple_rpc::client> rpc_client_;
 		high_resolution_clock::time_point last_heart_beat_;

@@ -29,6 +29,7 @@ namespace xraft
 			{
 				std::string buffer;
 				buffer.resize(sizeof(head));
+				file_.seekg(0, std::ios::beg);
 				file_.read((char*)buffer.data(), buffer.size());
 				if (!file_.good())
 					return false;
