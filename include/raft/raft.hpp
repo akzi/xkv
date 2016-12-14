@@ -52,6 +52,25 @@ namespace xraft
  			set_election_timer();
 		}
 	private:
+		void load_metadata()
+		{
+			int64_t current_term;
+			int64_t committed_index;
+			int64_t last_snapshot_term;
+			int64_t last_snapshot_index;
+
+			metadata_.get("last_applied_index", last_applied_index_);
+			metadata_.get("voted_for", voted_for_);
+			if (metadata_.get("current_term", current_term))
+				current_term_ = current_term;
+			if (metadata_.get("committed_index", committed_index))
+				committed_index_ = committed_index;
+			if (metadata_.get("last_snapshot_term", last_snapshot_term))
+				last_snapshot_term_ = last_snapshot_term;
+			if (metadata_.get("last_snapshot_index", last_snapshot_index))
+				last_snapshot_index_ = last_snapshot_index;
+
+		}
 		void init_timer()
 		{
 			timer_.start();
@@ -136,6 +155,7 @@ namespace xraft
 				commiter_.push([handle = std::move(callback)] {
 					handle(false, 0);
 				});
+				return;
 			}
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
@@ -164,7 +184,7 @@ namespace xraft
 				leader_id_ = request.leader_id_;
 				//todo log Warm
 			}
-			set_election_timer();
+			xnet::guard guard([this] { set_election_timer(); });
 			if (request.prev_log_term_ == get_last_log_entry_term() &&
 				request.prev_log_index_ > get_last_log_entry_index())
 				return response;
@@ -206,11 +226,10 @@ namespace xraft
 					{
 						assert(itr.index_ == committed_index_ + 1);
 						commit_entry_callback_(std::move(itr.log_data_),itr.index_);
-						++committed_index_;
+						set_committed_index(committed_index_+1);
 					}
 				});
 			}
-			set_election_timer();
 			return response;
 		}
 		vote_response handle_vote_request(const vote_request &request)
@@ -228,10 +247,12 @@ namespace xraft
 				step_down(request.term_);
 			}
 
-			if (request.term_ == current_term_) {
-				if (is_ok && voted_for_.empty()) {
+			if (request.term_ == current_term_) 
+			{
+				if (is_ok && voted_for_.empty()) 
+				{
 					step_down(current_term_);
-					voted_for_ = request.candidate_;
+					set_voted_for(request.candidate_);
 				}
 			}
 			response.term_ = current_term_;
@@ -311,7 +332,7 @@ namespace xraft
 				log_.truncate_suffix(head.last_included_index_);
 
 				if (head.last_included_index_ > committed_index_)
-					committed_index_ = head.last_included_index_;
+					set_committed_index(head.last_included_index_);
 			});
 			
 		}
@@ -335,13 +356,15 @@ namespace xraft
 			{
 				current_term_ = new_term;
 				leader_id_.clear();
-				voted_for_.clear();
+				set_voted_for("");
 				update_Log_metadata();
+				if(snapshot_writer_)
+					snapshot_writer_.discard();
 			}
 			if (state_ == state::e_candidate)
 			{
 				vote_responses_.clear();
-				interrupt_vote();
+				cancel_election_timer();
 			}
 			if (state_ == state::e_leader)
 			{
@@ -357,12 +380,8 @@ namespace xraft
 				std::lock_guard<std::mutex> lock(mtx_);
 				for (auto &itr : pees_)
 					itr->send_cmd(raft_peer::cmd_t::e_election);
+				state_ = state::e_candidate;
 			});
-		}
-		void interrupt_vote()
-		{
-			for (auto &itr : pees_)
-				itr->send_cmd(raft_peer::cmd_t::e_interrupt_vote);
 		}
 		void sleep_peer_threads()
 		{
@@ -491,11 +510,13 @@ namespace xraft
 				if (item->second.waits_ == 0)
 				{
 					timer_.cancel(item->second.timer_id_);
-					committed_index_ = item->first;
+					set_committed_index(item->first);
 					append_log_callback func;
-					int64_t index_ = committed_index_;
-					commiter_.push([func = std::move(item->second.callback_),this, index_]{ 
-						func(true, index_); 
+					int64_t index = committed_index_;
+					commiter_.push([func = std::move(item->second.callback_),this, index]
+					{ 
+						func(true, index); 
+						set_last_applied(index);
 					});
 					append_log_callbacks_.erase(item);
 				}
@@ -530,19 +551,75 @@ namespace xraft
 			}
 			return std::move(entry);
 		}
+		void set_voted_for(const std::string &raft_id)
+		{
+			voted_for_ = raft_id;
+			if (!metadata_.set("voted_for", voted_for_))
+			{
+				//todo log error;
+				throw std::runtime_error("metadata::set [voted_for] failed");
+			}
+		}
+		void set_committed_index(int64_t index)
+		{
+			committed_index_ = index;
+			if (!metadata_.set("committed_index", committed_index_.load()))
+			{
+				//todo log error;
+				throw std::runtime_error("metadata::set [committed_index] failed");
+			}
+		}
+		void set_last_applied(int64_t index)
+		{
+			last_applied_index_ = index;
+			if (!metadata_.set("last_applied_index", index))
+			{
+				//todo log error;
+				throw std::runtime_error("metadata::set [committed_index] failed");
+			}
+		}
+		void set_term(int64_t term)
+		{
+			current_term_ = term;
+			if (!metadata_.set("current_term", term))
+			{
+				//todo log error;
+				throw std::runtime_error("metadata::set [current_term] failed");
+			}
+		}
+		void set_last_snapshot_index(int64_t index)
+		{
+			last_snapshot_index_ = index;
+			if (metadata_.set("last_snapshot_index", index))
+			{
+				//todo log error;
+				throw std::runtime_error("metadata::set [last_snapshot_index] failed");
+			}
+		}
+		void set_last_snapshot_term(int64_t term)
+		{
+			last_snapshot_term_ = term;
+			if (metadata_.set("last_snapshot_term", term))
+			{
+				//todo log error;
+				throw std::runtime_error("metadata::set [last_snapshot_term] failed");
+			}
+		}
+		detail::raft_config::raft_node mysql_;
 		//rpc
 		xsimple_rpc::rpc_proactor_pool rpc_proactor_pool_;
 		xsimple_rpc::rpc_server rpc_server_;
+		//raft
+		std::atomic_int64_t last_snapshot_index_ = 0;
+		std::atomic_int64_t last_snapshot_term_ = 0;
+		std::atomic_int64_t current_term_ = 0;
+		std::atomic_int64_t committed_index_ = 0;
+		int64_t last_applied_index_ = 0;
 
-		std::atomic_int64_t last_snapshot_index_;
-		std::atomic_int64_t last_snapshot_term_;
-		std::atomic_int64_t current_term_;
-		std::atomic_int64_t committed_index_;
-		detail::raft_config::raft_node mysql_;
 		std::string voted_for_;
 		std::string leader_id_;
 		int64_t election_timeout_ = 10000;
-		int64_t election_timer_id_;
+		int64_t election_timer_id_ = 0;
 
 		commit_entry_callback commit_entry_callback_;
 
@@ -555,6 +632,7 @@ namespace xraft
 		raft_config_mgr raft_config_mgr_;
 		int64_t append_log_timeout_ = 10000;//10 seconds;
 		std::vector<std::unique_ptr<raft_peer>> pees_;
+		
 		state state_;
 		std::mutex mtx_;
 		std::map<int64_t, append_log_callback_info> append_log_callbacks_;
@@ -569,6 +647,7 @@ namespace xraft
 		std::string filelog_path_ = "data/log";
 		std::string filelog_base_path_;
 
+		std::string current_snapshot_;
 		std::string snapshot_base_path_;
 		std::string snapshot_path_ = "data/snapshot/";
 

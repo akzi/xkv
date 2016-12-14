@@ -52,7 +52,7 @@ namespace detail
 			std::lock_guard<mutex> lock(mtx_);
 			if (!write_log(build_log(key, value, op::e_set)))
 				return false;
-			string_map_[key] = value;
+			integral_map_[key] = value;
 			return true;
 		}
 		bool del(const std::string &key)

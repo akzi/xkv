@@ -159,6 +159,8 @@ namespace detail
 			std::ifstream &file = reader.get_snapshot_stream();
 			do
 			{
+				if (try_execute_cmd())
+					break;
 				install_snapshot_request request;
 				request.term_ = get_current_term_();
 				request.leader_id_ = raft_id_;
