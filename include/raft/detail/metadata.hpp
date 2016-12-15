@@ -30,7 +30,7 @@ namespace detail
 		~metadata()
 		{
 			max_log_file_ = 0;
-			try_make_snapshot();
+			make_snapshot();
 		}
 		bool init(const std::string &path)
 		{

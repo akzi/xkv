@@ -383,9 +383,10 @@ namespace xraft
 			cancel_election_timer();
 			election_timer_id_ = timer_.set_timer(election_timeout_ ,[this] {
 				std::lock_guard<std::mutex> lock(mtx_);
+				set_term(current_term_ + 1);
+				state_ = state::e_candidate;
 				for (auto &itr : pees_)
 					itr->send_cmd(raft_peer::cmd_t::e_election);
-				state_ = state::e_candidate;
 				set_election_timer();
 			});
 		}
