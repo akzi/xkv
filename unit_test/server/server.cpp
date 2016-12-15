@@ -16,6 +16,7 @@ public:
 		port_ = port;
 		init_raft();
 		init_rpc();
+		metadata_.init(std::to_string(port));
 	}
 private:
 	struct sync_t
@@ -62,6 +63,10 @@ private:
 				->std::pair<bool, std::string>
 		{
 			using namespace xsimple_rpc::detail;
+
+			if (!raft_.check_leader())
+				return{ false, "no leader" };
+
 			std::string cmd("set");
 			std::string log;
 			log.resize(endec::get_sizeof(cmd)+ 
@@ -88,7 +93,7 @@ private:
 				metadata_.set(key, value);
 				return{ true,{} };
 			}
-			return {false, "raft error" };
+			return { false, "raft error" };
 		});
 		rpc_server_.regist("get", [this](const std::string &key) ->std::pair<bool, std::string>
 		{
@@ -103,6 +108,9 @@ private:
 			[this](const std::string &key) ->std::pair<bool, std::string> 
 		{
 			using namespace xsimple_rpc::detail;
+			if (!raft_.check_leader())
+				return{ false, "no leader" };
+
 			std::string cmd("set");
 			std::string log;
 			log.resize(endec::get_sizeof(cmd) +
@@ -168,7 +176,7 @@ int main(int args, char **argc)
 	{
 		server::raft_config config;
 		config.append_log_timeout_ = 10000;
-		config.election_timeout_ = 3000;
+		config.election_timeout_ = 10000;
 		config.metadata_base_path_ = "9001/data/metadata/";
 		config.raftlog_base_path_ = "9001/data/log/";
 		config.snapshot_base_path_ = "9001/data/snapshot/";
@@ -182,8 +190,9 @@ int main(int args, char **argc)
 	else if (argc[1] == std::string("9002"))
 	{
 		server::raft_config config;
-		config.append_log_timeout_ = 10000;
-		config.election_timeout_ = 3000;
+		config.append_log_timeout_ = 20000;
+		config.election_timeout_ = 10000;
+		config.heartbeat_interval_ = 10000;
 		config.metadata_base_path_ = "9002/data/metadata/";
 		config.raftlog_base_path_ = "9002/data/log/";
 		config.snapshot_base_path_ = "9002/data/snapshot/";

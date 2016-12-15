@@ -113,6 +113,7 @@ int main(int args, char **argc)
 			std::getline(std::cin, key);
 			std::getline(std::cin, value);
 			std::cout << std::endl;
+			std::cout << "..." << std::endl;
 			if (_client.set(key, value))
 				std::cout << cmd << "[" << key << ":" << value << "]" << std::endl;
 		}
@@ -120,8 +121,8 @@ int main(int args, char **argc)
 		{
 			std::string key, value;
 			std::getline(std::cin, key);
-			std::getline(std::cin, value);
 			std::cout << std::endl;
+			std::cout << "..." << std::endl;
 			if (_client.get(key, value))
 				std::cout << cmd << "[" << key << ":" << value << "]" << std::endl;
 		}
@@ -130,6 +131,7 @@ int main(int args, char **argc)
 			std::string key, value;
 			std::getline(std::cin, key);
 			std::cout << std::endl;
+			std::cout << "..." << std::endl;
 			if (_client.del(key))
 				std::cout << cmd << "[" << key << "]" << std::endl;
 		}
