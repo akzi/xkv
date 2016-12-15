@@ -261,6 +261,10 @@ namespace detail
 		{
 			if ((int)max_log_file_ > log_.tellp())
 				return true;
+			return make_snapshot();
+		}
+		bool make_snapshot()
+		{
 			std::ofstream file;
 			int mode = std::ios::binary |
 				std::ios::trunc |

@@ -44,8 +44,9 @@ namespace xraft
 		void init(raft_config config)
 		{
 			state_ = e_follower;
-			init_rpc();
 			init_config(config);
+			load_metadata();
+			init_rpc();
 			init_snapshot_builder();
  			init_pees();
 			init_timer();
@@ -58,7 +59,11 @@ namespace xraft
 			int64_t committed_index;
 			int64_t last_snapshot_term;
 			int64_t last_snapshot_index;
-
+			if (!metadata_.init(metadata_base_path_))
+			{
+				std::cout << "init metadata failed" << std::endl;
+				std::exit(1);
+			}
 			metadata_.get("last_applied_index", last_applied_index_);
 			metadata_.get("voted_for", voted_for_);
 			if (metadata_.get("current_term", current_term))
@@ -78,7 +83,7 @@ namespace xraft
 		void init_config(raft_config config)
 		{
 			raft_config_mgr_.set(config.nodes_);
-			mysql_ = config.myself_;
+			myself_ = config.myself_;
 			filelog_base_path_ = config.raftlog_base_path_;
 			metadata_base_path_ = config.metadata_base_path_;
 			snapshot_base_path_ = config.snapshot_base_path_;
@@ -108,7 +113,7 @@ namespace xraft
 				return handle_vote_request(req); 
 			}).regist("install_snapshot_request", [this](install_snapshot_request &req) { 
 				return handle_install_snapshot(req); 
-			}).bind("127.0.0.1", 9001);
+			}).bind(myself_.ip_, myself_.port_);
 
 			rpc_proactor_pool_.start();
 		}
@@ -128,7 +133,7 @@ namespace xraft
 				peer.get_last_log_index_ = std::bind(&raft::get_last_log_entry_index, this);
 				peer.connect_callback_ = std::bind(&raft::peer_connect_callback, this, _1, _2);
 				peer.get_snapshot_path_ = std::bind(&raft::get_snapshot_filepath, this);
-				peer.raft_id_ = mysql_.raft_id_;
+				peer.raft_id_ = myself_.raft_id_;
 				peer.start();
 				peer.send_cmd(raft_peer::cmd_t::e_connect);
 			}
@@ -381,6 +386,7 @@ namespace xraft
 				for (auto &itr : pees_)
 					itr->send_cmd(raft_peer::cmd_t::e_election);
 				state_ = state::e_candidate;
+				set_election_timer();
 			});
 		}
 		void sleep_peer_threads()
@@ -440,9 +446,9 @@ namespace xraft
 		append_entries_request build_append_entries_request(int64_t index)
 		{
 			append_entries_request request;
-			request.entries_ = log_.get_log_entries(index - 1);
+			request.entries_ = log_.get_log_entries(index);
 			request.leader_commit_ = committed_index_;
-			request.leader_id_ = mysql_.raft_id_;
+			request.leader_id_ = myself_.raft_id_;
 			request.prev_log_index_ = request.entries_.size() ? (request.entries_.front().index_) : 0;
 			request.prev_log_term_ = request.entries_.size() ? (request.entries_.front().term_) : 0;
 			request.entries_.pop_front();
@@ -484,7 +490,7 @@ namespace xraft
 		vote_request build_vote_request()
 		{
 			vote_request request;
-			request.candidate_ = mysql_.raft_id_;
+			request.candidate_ = myself_.raft_id_;
 			request.term_ = current_term_;
 			request.last_log_index_ = get_last_log_entry_index();
 			request.last_log_term_ = get_last_log_entry_term();
@@ -605,7 +611,7 @@ namespace xraft
 				throw std::runtime_error("metadata::set [last_snapshot_term] failed");
 			}
 		}
-		detail::raft_config::raft_node mysql_;
+		detail::raft_config::raft_node myself_;
 		//rpc
 		xsimple_rpc::rpc_proactor_pool rpc_proactor_pool_;
 		xsimple_rpc::rpc_server rpc_server_;
