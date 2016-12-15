@@ -62,8 +62,6 @@ namespace detail
 			std::list<log_entry> &log_entries,
 			std::unique_lock<std::mutex> &lock)
 		{
-			assert(index);
-			assert(count);
 			std::lock_guard<std::mutex> lock_guard(mtx_);
 			lock.unlock();
 			int64_t data_file_offset = 0;
@@ -360,8 +358,6 @@ namespace detail
 		}
 		std::list<log_entry> get_log_entries(int64_t index, std::size_t count = 10)
 		{
-			assert(index);
-			assert(count);
 			std::unique_lock<std::mutex> lock(mtx_);
 			if (logfiles_.size())
 			{
@@ -497,8 +493,6 @@ namespace detail
 		bool get_entries_from_cache(std::list<log_entry> &log_entries,
 			int64_t &index, std::size_t &count)
 		{
-			assert(count);
-			assert(index);
 			if (log_entries_cache_.size() && log_entries_cache_.front().index_ <= index)
 			{
 				for (auto &itr : log_entries_cache_)

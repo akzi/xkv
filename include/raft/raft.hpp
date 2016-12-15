@@ -1,5 +1,6 @@
 #pragma once
 #include "detail/detail.hpp"
+#define TRACE std::cout <<__FUNCTION__ <<std::endl;
 namespace xraft
 {
 	using namespace detail;
@@ -20,6 +21,10 @@ namespace xraft
 		raft()
 			:rpc_server_(rpc_proactor_pool_)
 		{
+		}
+		~raft()
+		{
+
 		}
 		bool check_leader()
 		{
@@ -62,7 +67,7 @@ namespace xraft
 			if (!metadata_.init(metadata_base_path_))
 			{
 				std::cout << "init metadata failed" << std::endl;
-				std::exit(1);
+				std::exit(0);
 			}
 			metadata_.get("last_applied_index", last_applied_index_);
 			metadata_.get("voted_for", voted_for_);
@@ -168,6 +173,7 @@ namespace xraft
 		append_entries_response 
 			handle_append_entries_request(append_entries_request & request)
 		{
+			TRACE;
 			std::lock_guard<std::mutex> locker(mtx_);
 			append_entries_response response;
 			response.success_ = false;
@@ -239,6 +245,7 @@ namespace xraft
 		}
 		vote_response handle_vote_request(const vote_request &request)
 		{
+			TRACE;
 			vote_response response;
 			auto is_ok = false;
 			if (request.last_log_term_ > get_last_log_entry_term() ||
@@ -353,10 +360,13 @@ namespace xraft
 
 		void handle_new_term(int64_t new_term)
 		{
+			TRACE;
 			step_down(new_term);
 		}
 		void step_down(int64_t new_term)
 		{
+			TRACE;
+			std::cout << new_term << std::endl;
 			if (current_term_ < new_term)
 			{
 				current_term_ = new_term;
@@ -380,8 +390,10 @@ namespace xraft
 		}
 		void set_election_timer()
 		{
+			TRACE;
 			cancel_election_timer();
 			election_timer_id_ = timer_.set_timer(election_timeout_ ,[this] {
+				std::cout << "------election timer callback------" << std::endl;
 				std::lock_guard<std::mutex> lock(mtx_);
 				set_term(current_term_ + 1);
 				state_ = state::e_candidate;
@@ -392,6 +404,8 @@ namespace xraft
 		}
 		void sleep_peer_threads()
 		{
+			TRACE;
+			std::cout << "-----------------------" << std::endl;
 			for (auto &itr : pees_)
 				itr->send_cmd(raft_peer::cmd_t::e_sleep);
 		}
@@ -446,17 +460,19 @@ namespace xraft
 		}
 		append_entries_request build_append_entries_request(int64_t index)
 		{
+			TRACE;
 			append_entries_request request;
+			request.term_ = current_term_;
 			request.entries_ = log_.get_log_entries(index);
 			request.leader_commit_ = committed_index_;
 			request.leader_id_ = myself_.raft_id_;
 			request.prev_log_index_ = request.entries_.size() ? (request.entries_.front().index_) : 0;
 			request.prev_log_term_ = request.entries_.size() ? (request.entries_.front().term_) : 0;
-			request.entries_.pop_front();
 			return std::move(request);
 		}
 		void handle_vote_response(const vote_response &response)
 		{
+			TRACE;
 			if (state_ != e_candidate)
 			{
 				return;
@@ -479,6 +495,7 @@ namespace xraft
 		}
 		void become_leader()
 		{
+			TRACE;
 			state_ = e_leader;
 			cancel_election_timer();
 			for (auto &itr : pees_)
@@ -486,10 +503,12 @@ namespace xraft
 		}
 		void cancel_election_timer()
 		{
+			TRACE;
 			timer_.cancel(election_timer_id_);
 		}
 		vote_request build_vote_request()
 		{
+			TRACE;
 			vote_request request;
 			request.candidate_ = myself_.raft_id_;
 			request.term_ = current_term_;
@@ -560,6 +579,7 @@ namespace xraft
 		}
 		void set_voted_for(const std::string &raft_id)
 		{
+			TRACE;
 			voted_for_ = raft_id;
 			if (!metadata_.set("voted_for", voted_for_))
 			{
@@ -587,6 +607,8 @@ namespace xraft
 		}
 		void set_term(int64_t term)
 		{
+			TRACE;
+			std::cout << "term:" << term << std::endl;
 			current_term_ = term;
 			if (!metadata_.set("current_term", term))
 			{

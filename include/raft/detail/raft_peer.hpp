@@ -63,12 +63,10 @@ namespace detail
 			{
 				if (!try_execute_cmd())
 				{
-					if(!check_rpc())
+					if (!check_rpc())
 						continue;
-					if (!send_heartbeat_ )
-						do_sleep(next_heartbeat_delay());
 					else
-						do_sleep(10000);
+						do_sleep(1000);
 				}
 			} while (!stop_);
 		}
@@ -87,9 +85,10 @@ namespace detail
 					if (index == match_index_ && send_heartbeat_)
 					{
 						send_heartbeat_ = false;
-						break;
+						do_sleep(next_heartbeat_delay());
+						continue;
 					}
-					if (!next_index_)
+					if (!next_index_ || next_index_ > index)
 						next_index_ = index;
 					auto request = build_append_entries_request_(next_index_);
 					if (request.entries_.empty() && next_index_)
@@ -106,7 +105,8 @@ namespace detail
 							new_term_callback_(response.term_);
 							return;
 						}
-						--next_index_;
+						if(next_index_ > 0)
+							--next_index_;
 						continue;
 					}
 					std::vector<int64_t> indexs;
@@ -120,7 +120,6 @@ namespace detail
 				catch (std::exception &e)
 				{
 					std::cout << e.what() << std::endl;
-					break;
 				}
 			} while (true);
 		}
@@ -129,13 +128,22 @@ namespace detail
 			send_append_entries_request(const append_entries_request &req ,int timeout = 10000)
 		{
 			if (!check_rpc())
-				throw std::runtime_error("rpc is connected");
+				throw std::runtime_error("connect to peer failed"+myself_.ip_ 
+					+ ":" + std::to_string(myself_.port_));
 			struct RPC
 			{
 				DEFINE_RPC_PROTO(append_entries_request, 
 					detail::append_entries_response(detail::append_entries_request));
 			};
-			return rpc_client_->rpc_call<RPC::append_entries_request>(req);
+			try
+			{
+				return rpc_client_->rpc_call<RPC::append_entries_request>(req);
+			}
+			catch (const std::exception& e)
+			{
+				rpc_client_.release();
+				throw e;
+			}
 		}
 
 		void send_install_snapshot_req()
@@ -170,19 +178,27 @@ namespace detail
 				request.data_.resize(20 * 1024);
 				file.read((char*)request.data_.data(), request.data_.size());
 				request.done_ = file.eof();
-
-				auto resp = rpc_client_->rpc_call<RPC::append_entries_request>(request);
-				if (resp.term_ > request.term_)
+				try
 				{
-					new_term_callback_(resp.term_);
-					return;
+					auto resp = rpc_client_->rpc_call<RPC::append_entries_request>(request);
+					if (resp.term_ > request.term_)
+					{
+						new_term_callback_(resp.term_);
+						return;
+					}
+					else if (resp.bytes_stored_ != file.tellg())
+					{
+						file.seekg(resp.bytes_stored_, std::ios::beg);
+					}
+					else if (request.done_)
+						break;
 				}
-				else if (resp.bytes_stored_ != file.tellg())
+				catch (const std::exception& e)
 				{
-					file.seekg(resp.bytes_stored_, std::ios::beg);
+					rpc_client_.release();
+					throw e;
 				}
-				else if (request.done_)
-					break;
+				
 
 			} while (!stop_);
 		}
@@ -272,6 +288,7 @@ namespace detail
 			catch (const std::exception& e)
 			{
 				std::cout << e.what() << std::endl;
+				rpc_client_.release();
 			}
 		}
 
@@ -279,7 +296,7 @@ namespace detail
 		{
 			stop_ = true;
 		}
-		std::int64_t heatbeat_inteval_;
+		std::int64_t heatbeat_inteval_ = 1000;
 
 		xsimple_rpc::rpc_proactor_pool &rpc_proactor_pool_;
 		std::unique_ptr<xsimple_rpc::client> rpc_client_;

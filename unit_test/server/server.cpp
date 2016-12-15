@@ -168,7 +168,7 @@ int main(int args, char **argc)
 	{
 		server::raft_config config;
 		config.append_log_timeout_ = 10000;
-		config.election_timeout_ = 10000;
+		config.election_timeout_ = 3000;
 		config.metadata_base_path_ = "9001/data/metadata/";
 		config.raftlog_base_path_ = "9001/data/log/";
 		config.snapshot_base_path_ = "9001/data/snapshot/";

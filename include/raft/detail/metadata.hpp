@@ -251,7 +251,7 @@ namespace detail
 			if (!file.good())
 			{
 				//process error
-				return false;
+				return true;
 			}
 			auto ret = load_fstream(file);
 			file.close();
@@ -309,6 +309,7 @@ namespace detail
 			if (trunc)
 				mode |= std::ios::trunc;
 			log_.open(get_log_file().c_str(), mode);
+			touch_metadata_file();
 			return log_.good();
 		}
 		bool touch_metadata_file()
@@ -344,7 +345,7 @@ namespace detail
 		}
 		std::string get_log_file()
 		{
-			return path_ + std::to_string(index_) + ".log";
+			return path_ + std::to_string(index_) + ".Log";
 		}
 		std::string get_metadata_file()
 		{
@@ -356,13 +357,13 @@ namespace detail
 		}
 		std::string get_old_log_file()
 		{
-			return path_ + std::to_string(index_ - 1) + ".log";
+			return path_ + std::to_string(index_ - 1) + ".Log";
 		}
 		std::string get_old_metadata_file()
 		{
 			return path_ + std::to_string(index_ - 1) + ".metadata";
 		}
-		uint64_t index_ = 0;
+		uint64_t index_ = 1;
 		std::size_t max_log_file_ = 10 * 1024 * 1024;
 		std::ofstream log_;
 		std::string path_;

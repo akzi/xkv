@@ -108,7 +108,7 @@ namespace xraft
 		struct append_entries_request
 		{
 			int64_t term_ = 0;
-			std::string leader_id_ = 0;
+			std::string leader_id_;
 			int64_t prev_log_index_ = 0;
 			int64_t prev_log_term_ = 0;
 			int64_t leader_commit_ = 0;
