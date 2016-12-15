@@ -101,6 +101,7 @@ namespace xraft
 			raft_node myself_;
 			std::size_t append_log_timeout_;
 			std::size_t election_timeout_;
+			std::size_t heartbeat_interval_;
 			std::string raftlog_base_path_;
 			std::string snapshot_base_path_;
 			std::string metadata_base_path_;

@@ -82,14 +82,14 @@ namespace detail
 					if (try_execute_cmd())
 						break;
 					int64_t index = get_last_log_index_();
+					if (!next_index_ || next_index_ > index)
+						next_index_ = index;
 					if (index == match_index_ && send_heartbeat_)
 					{
 						send_heartbeat_ = false;
 						do_sleep(next_heartbeat_delay());
 						continue;
 					}
-					if (!next_index_ || next_index_ > index)
-						next_index_ = index;
 					auto request = build_append_entries_request_(next_index_);
 					if (request.entries_.empty() && next_index_)
 					{

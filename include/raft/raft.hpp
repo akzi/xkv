@@ -463,11 +463,21 @@ namespace xraft
 			TRACE;
 			append_entries_request request;
 			request.term_ = current_term_;
-			request.entries_ = log_.get_log_entries(index);
+			request.entries_ = log_.get_log_entries(index > 1 ? index -1: index);
 			request.leader_commit_ = committed_index_;
 			request.leader_id_ = myself_.raft_id_;
-			request.prev_log_index_ = request.entries_.size() ? (request.entries_.front().index_) : 0;
-			request.prev_log_term_ = request.entries_.size() ? (request.entries_.front().term_) : 0;
+			if (request.entries_.size() > 1 && index > 1)
+			{
+				request.prev_log_index_ = request.entries_.front().index_;
+				request.prev_log_term_ = request.entries_.front().term_;
+				request.entries_.pop_front();
+			}
+			else 
+			{
+				request.prev_log_index_ = 0;
+				request.prev_log_term_ = 0;
+			}
+			
 			return std::move(request);
 		}
 		void handle_vote_response(const vote_response &response)
