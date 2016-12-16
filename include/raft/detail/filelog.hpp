@@ -73,7 +73,11 @@ namespace detail
 				uint32_t len;
 				data_file_.read((char*)&len, sizeof(uint32_t));
 				if (!data_file_.good())
+				{
+					data_file_.clear(data_file_.goodbit);
+					data_file_.seekp(0, std::ios::end);
 					return data_file_.eof();
+				}
 				std::string buffer;
 				buffer.resize(len);
 				data_file_.read((char*)buffer.data(), len);
@@ -235,7 +239,10 @@ namespace detail
 			int64_t index_buffer_;
 			index_file_.read((char*)&index_buffer_, sizeof(int64_t));
 			if (!index_file_.good())
+			{
+				index_file_.clear(index_file_.goodbit);
 				return false;
+			}
 			if (index_buffer_ != index)
 				//todo log error.
 				return false;

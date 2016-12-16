@@ -50,6 +50,7 @@ namespace xraft
 		{
 			state_ = e_follower;
 			init_config(config);
+			init_raft_log();
 			load_metadata();
 			init_rpc();
 			init_snapshot_builder();
@@ -58,6 +59,14 @@ namespace xraft
  			set_election_timer();
 		}
 	private:
+		void init_raft_log()
+		{
+			if (!log_.init(filelog_base_path_))
+			{
+				std::cout << "raft log init failed" << std::endl;
+				throw std::runtime_error("raft log init failed");
+			}
+		}
 		void load_metadata()
 		{
 			int64_t current_term;
@@ -87,7 +96,8 @@ namespace xraft
 		}
 		void init_config(raft_config config)
 		{
-			raft_config_mgr_.set(config.nodes_);
+			raft_config_mgr_.set(config.peers_);
+			raft_config_mgr_.get_nodes().emplace_back(config.myself_);
 			myself_ = config.myself_;
 			filelog_base_path_ = config.raftlog_base_path_;
 			metadata_base_path_ = config.metadata_base_path_;
@@ -127,6 +137,8 @@ namespace xraft
 			using namespace std::placeholders;
 			for (auto &itr: raft_config_mgr_.get_nodes())
 			{
+				if (itr.raft_id_ == myself_.raft_id_)
+					continue;
 				pees_.emplace_back(new raft_peer(rpc_proactor_pool_, itr));
 				raft_peer &peer = *(pees_.back());
 				peer.append_entries_success_callback_ = std::bind(&raft::append_entries_callback, this, _1);
@@ -415,11 +427,14 @@ namespace xraft
 		}
 		struct append_log_callback_info
 		{
-			append_log_callback_info(int waits, int64_t timer_id, 
+			append_log_callback_info(int waits, int64_t index, int64_t timer_id,
 				append_log_callback && callback)
 					:waits_(waits),
 					timer_id_(timer_id),
-					callback_(callback){}
+					callback_(callback),
+					index_(index)
+			{
+			}
 			int64_t index_;
 			int waits_;
 			int64_t timer_id_;
@@ -435,7 +450,7 @@ namespace xraft
 			utils::lock_guard lock(mtx_);
 			append_log_callbacks_.emplace(
 				std::piecewise_construct, std::forward_as_tuple(index),
-				std::forward_as_tuple(raft_config_mgr_.get_majority() - 1, timer_id, std::move(callback)));
+				std::forward_as_tuple(raft_config_mgr_.get_majority() - 1, index,  timer_id, std::move(callback)));
 		}
 		int64_t set_timeout(int64_t index)
 		{

@@ -109,13 +109,17 @@ namespace detail
 							--next_index_;
 						continue;
 					}
+					match_index_ = response.last_log_index_;
+					next_index_ = match_index_ + 1;
+
+					if (request.entries_.empty())
+						continue;
+
 					std::vector<int64_t> indexs;
 					indexs.reserve(request.entries_.size());
 					for (auto &itr : request.entries_)
 						indexs.push_back(itr.index_);
 					append_entries_success_callback_(indexs);
-					match_index_ = response.last_log_index_;
-					next_index_ = match_index_ + 1;
 				}
 				catch (std::exception &e)
 				{

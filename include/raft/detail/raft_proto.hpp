@@ -97,7 +97,7 @@ namespace xraft
 				std::string raft_id_;
 			};
 			using nodes = std::vector<raft_node>;
-			nodes nodes_;
+			nodes peers_;
 			raft_node myself_;
 			std::size_t append_log_timeout_;
 			std::size_t election_timeout_;
