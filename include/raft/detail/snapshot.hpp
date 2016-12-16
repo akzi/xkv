@@ -140,51 +140,40 @@ namespace xraft
 			{
 				build_snapshot_ = callback;
 			}
-			void start()
+			void regist_build_snapshot_done_callback(build_snapshot_done_callback callback)
 			{
-				worker_ = std::thread([this] { 
+				build_snapshot_done_ = callback;
+			}
+			void do_make_snapshot()
+			{
+				worker_ = std::thread([this] {
 					run();
 				});
-			}
-			void stop()
-			{
-				is_stop_ = true;
-				worker_.join();
-			}
-			void set_snapshot_distance(int64_t count_)
-			{
-				distance_ = count_;
+				worker_.detach();
 			}
 		private:
 			void run()
 			{
-				do
+				snapshot_head head;
+				auto commit_index = get_last_commit_index_();
+				auto diff = commit_index - get_log_start_index_();
+				head.last_included_index_ = commit_index;
+				head.last_included_term_ = get_log_entry_term_(commit_index);
+				snapshot_writer writer;
+				writer.write_sanpshot_head(head);
+				auto result = build_snapshot_([&writer](const std::string &buffer)
 				{
-					auto commit_index = get_last_commit_index_();
-					auto diff = commit_index  - get_log_start_index_();
-					if (diff > distance_)
-					{
-						snapshot_head head;
-						head.last_included_index_ = commit_index;
-						head.last_included_term_ = get_log_entry_term_(commit_index);
-						snapshot_writer writer;
-						writer.write_sanpshot_head(head);
-						auto result = build_snapshot_([&writer](const std::string &buffer) 
-						{
-							writer.write(buffer);
-							return true; 
-						}, commit_index);
-						if (result == false)
-						{
-							//todo log error
-							writer.discard();
-						}
-						writer.close();
-						build_snapshot_done_(commit_index);
-						//todo log snapshot done
-					}
-					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-				} while (is_stop_ == false);
+					writer.write(buffer);
+					return true;
+				}, commit_index);
+				if (result == false)
+				{
+					std::cout << "build_snapshot_ failed" << std::endl;
+					writer.discard();
+				}
+				writer.close();
+				build_snapshot_done_(commit_index);
+				//todo log snapshot done
 			}
 			get_log_entry_term_handle get_log_entry_term_;
 			get_last_commit_index_handle get_last_commit_index_;

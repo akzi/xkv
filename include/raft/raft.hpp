@@ -66,6 +66,9 @@ namespace xraft
 				std::cout << "raft log init failed" << std::endl;
 				throw std::runtime_error("raft log init failed");
 			}
+			log_.set_make_snapshot_trigger([this] {
+				snapshot_builder_.do_make_snapshot();
+			});
 		}
 		void load_metadata()
 		{
@@ -110,15 +113,15 @@ namespace xraft
 			snapshot_builder_.regist_build_snapshot_callback(
 				std::bind(&raft::make_snapshot_callback, this,
 					std::placeholders::_1, std::placeholders::_2));
+			snapshot_builder_.regist_build_snapshot_done_callback(
+				std::bind(&raft::make_snapshot_done_callback, this, 
+					std::placeholders::_1));
 			snapshot_builder_.regist_get_last_commit_index(
 				std::bind(&raft::get_last_log_entry_index, this));
 			snapshot_builder_.regist_get_log_entry_term_handle(
 				std::bind(&raft::get_last_log_entry_term, this));
 			snapshot_builder_.regist_get_log_start_index(
 				std::bind(&raft::get_log_start_index, this));
-			snapshot_builder_.set_snapshot_distance(10240000);//for test
-
-			snapshot_builder_.start();
 		}
 		void init_rpc()
 		{
@@ -246,7 +249,8 @@ namespace xraft
 						continue;
 					if (itr.index_ <= get_last_log_entry_index())
 					{
-						if (get_log_entry(itr.index_).term_ == itr.term_)
+						auto entry = get_log_entry(itr.index_);
+						if (entry .term_== itr.term_)
 							continue;
 						assert(committed_index_ < itr.index_);
 						log_.truncate_suffix(itr.index_);
@@ -280,13 +284,20 @@ namespace xraft
 			auto is_ok = false;
 			if (request.last_log_term_ > get_last_log_entry_term())
 			{
-				std::cout << "request.last_log_term_ :" << request.last_log_term_ << " get_last_log_entry_term():" << get_last_log_entry_term() << std::endl;
+				std::cout << "request.last_log_term_ :" 
+					<< request.last_log_term_ 
+					<< " get_last_log_entry_term():" 
+					<< get_last_log_entry_term() << std::endl;
 				is_ok = true;
 			}
 
-			if (request.last_log_term_ == get_last_log_entry_term() && request.last_log_index_ >= get_last_log_entry_index())
+			if (request.last_log_term_ == get_last_log_entry_term() && 
+				request.last_log_index_ >= get_last_log_entry_index())
 			{
-				std::cout << "request.last_log_term_ :"<< request.last_log_term_ <<" request.last_log_index_ :" << get_last_log_entry_index()<< std::endl;
+				std::cout << "request.last_log_term_ :" 
+					<< request.last_log_term_ 
+					<<" request.last_log_index_ :" 
+					<< get_last_log_entry_index() << std::endl;
 				is_ok = true;
 			}
 				
@@ -504,7 +515,7 @@ namespace xraft
 			TRACE;
 			append_entries_request request;
 			request.term_ = current_term_;
-			request.entries_ = log_.get_log_entries(index > 1 ? index -1: index);
+			request.entries_ = log_.get_log_entries(index > 1 ? index -1: index, 100);
 			request.leader_commit_ = committed_index_;
 			request.leader_id_ = myself_.raft_id_;
 			if (request.entries_.size() > 1 && index > 1)
@@ -605,6 +616,9 @@ namespace xraft
 		}
 		void make_snapshot_done_callback(int64_t index)
 		{
+			log_.set_make_snapshot_trigger([this] {
+				snapshot_builder_.do_make_snapshot();
+			});
 			log_.truncate_prefix(index);
 		}
 		int64_t get_last_log_entry_term()

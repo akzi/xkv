@@ -496,6 +496,11 @@ namespace detail
 				return current_file_.get_log_start();
 			return 0;
 		}
+		void set_make_snapshot_trigger(std::function<void()> callback)
+		{
+			std::lock_guard<std::mutex> lock(mtx_);
+			make_snapshot_trigger_ = callback;
+		}
 	private:
 		bool get_entries_from_cache(std::list<log_entry> &log_entries,
 			int64_t &index, std::size_t &count)
@@ -548,22 +553,34 @@ namespace detail
 			{
 				logfiles_.emplace(current_file_.get_log_start(),
 					std::move(current_file_));
-				check_apply(current_file_.open(
-					path_ + std::to_string(last_index_ + 1) + ".log"));
+				std::string filepath = path_ + std::to_string(last_index_ + 1) + ".log";
+				check_apply(current_file_.open(filepath));
+				check_make_snapshot_trigger();
 			}
 			return true;
 		}
 
+		void check_make_snapshot_trigger()
+		{
+			if (logfiles_.size() > max_log_file_count_ 
+				&& make_snapshot_trigger_)
+			{
+				make_snapshot_trigger_();
+				make_snapshot_trigger_ = nullptr;
+			}
+		}
 		std::mutex mtx_;
 		std::list<log_entry> log_entries_cache_;
 		std::size_t log_entries_cache_size_ = 0;
-		std::size_t max_cache_size_ = 1024 * 1024 * 10;
-		std::size_t max_file_size_ = 1024 * 1024 * 10;
+		std::size_t max_cache_size_ = 1;
+		std::size_t max_file_size_ = 1024;
 		int64_t last_index_ = 0;
 		std::string path_;
 		file current_file_;
 		int64_t current_file_last_index_ = 0;
 		std::map<int64_t, detail::file> logfiles_;
+		std::size_t max_log_file_count_ = 4;
+		std::function<void()> make_snapshot_trigger_;
 	};
 }
 
