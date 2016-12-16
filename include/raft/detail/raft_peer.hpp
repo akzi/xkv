@@ -86,6 +86,7 @@ namespace detail
 						next_index_ = index;
 					if (index == match_index_ && send_heartbeat_)
 					{
+						std::cout << "index :" << index << "match_index_ :" << match_index_ << std::endl;
 						send_heartbeat_ = false;
 						do_sleep(next_heartbeat_delay());
 						continue;
@@ -101,13 +102,15 @@ namespace detail
 					update_heartbeat_time();
 					if (!response.success_)
 					{
+						match_index_ = 0;
 						if (get_current_term_() < response.term_)
 						{
 							new_term_callback_(response.term_);
 							return;
 						}
-						if(next_index_ > 0)
-							--next_index_;
+						next_index_ = response.last_log_index_;
+						if (next_index_ == 0)
+							next_index_ = 1;
 						continue;
 					}
 					match_index_ = response.last_log_index_;
@@ -246,9 +249,11 @@ namespace detail
 		{
 			std::unique_lock<std::mutex> lock(mtx_);
 			if(!milliseconds)
-				cv_.wait(lock);
+				cv_.wait(lock, [this] { 
+				return get_last_log_index_() != match_index_; });
 			else {
-				cv_.wait_for(lock, std::chrono::milliseconds(milliseconds));
+				cv_.wait_for(lock, std::chrono::milliseconds(milliseconds), 
+					[this] { return get_last_log_index_() != match_index_; });
 			}
 		}
 		

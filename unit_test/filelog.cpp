@@ -48,13 +48,29 @@ XTEST_SUITE(filelog)
 	}
 #endif 
 
-	XUNIT_TEST(test_reload_log)
+	XUNIT_TEST(test_reload_9001log)
 	{
 		filelog flog;
-		xassert(flog.init("F:\\fork\\akzi\\xraft\\unit_test\\x64\\Debug\\9001\\data\\log\\"));
+		xassert(flog.init("9001/data/log/"));
 		auto entries = flog.get_log_entries(1, 300);
 
+		for (auto &itr: entries)
+		{
+			std::cout << itr.index_ << std::endl;
 
+		}
+	}
+	XUNIT_TEST(test_reload_9002log)
+	{
+		filelog flog;
+		xassert(flog.init("9002/data/log/"));
+		auto entries = flog.get_log_entries(1, 300);
+
+		for (auto &itr : entries)
+		{
+			std::cout << itr.index_ << std::endl;
+
+		}
 	}
 #if 0
 	XUNIT_TEST(write_get_log_entries)

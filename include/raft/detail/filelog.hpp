@@ -48,11 +48,12 @@ namespace detail
 			uint32_t len = (uint32_t)data.size();
 			data_file_.write(reinterpret_cast<char*>(&len), sizeof len);
 			data_file_.write(data.data(), data.size());
-			data_file_.flush();
+			data_file_.sync();
 			check_apply(data_file_.good());
 			index_file_.write(reinterpret_cast<char*>(&index), sizeof(index));
 			index_file_.write(reinterpret_cast<char*>(&file_pos), sizeof(file_pos));
-			index_file_.flush();
+			index_file_.sync();
+			last_log_index_ = index;
 			check_apply(index_file_.good());
 			return true;
 		}
@@ -177,9 +178,9 @@ namespace detail
 		}
 		int64_t get_last_log_index()
 		{
-			std::lock_guard<std::mutex> lock(mtx_);
 			if (last_log_index_ == -1)
 			{
+				std::lock_guard<std::mutex> lock(mtx_);
 				index_file_.seekg(-(int32_t)(sizeof(int64_t) * 2), std::ios::end);
 				index_file_.read((char*)&last_log_index_, sizeof(last_log_index_));
 				index_file_.seekp(0, std::ios::end);
@@ -272,7 +273,10 @@ namespace detail
 				index_file_.read(buffer, sizeof(buffer));
 				index_file_.seekp(0, std::ios::end);
 				if (index_file_.gcount() != sizeof(buffer))
+				{
+					index_file_.clear(index_file_.goodbit);
 					return 0;
+				}
 				log_index_start_ = *(int64_t*)(buffer);
 			}
 			return log_index_start_;
@@ -315,7 +319,10 @@ namespace detail
 			check_apply(functors::fs::mkdir()(path_));
 			auto files = functors::fs::ls_files()(path_);
 			if (files.empty())
-				return true;
+			{
+				if (!current_file_.is_open())
+					return current_file_.open( path_ + std::to_string(0) + ".log");
+			}
 			for (auto &itr : files)
 			{
 				if (itr.find(".log") != std::string::npos)
@@ -341,9 +348,6 @@ namespace detail
 			log_entries_cache_size_ += buffer.size();
 			log_entries_cache_.emplace_back(std::move(entry));
 			check_log_entries_size();
-			if (!current_file_.is_open())
-				check_apply(current_file_.open(
-					path_ + std::to_string(entry.index_) + ".log"));
 			check_apply(current_file_.write(last_index_, std::move(buffer)));
 			check_current_file_size();
 			return true;
@@ -553,8 +557,8 @@ namespace detail
 		std::mutex mtx_;
 		std::list<log_entry> log_entries_cache_;
 		std::size_t log_entries_cache_size_ = 0;
-		std::size_t max_cache_size_ = 1024;
-		std::size_t max_file_size_ = 1024;
+		std::size_t max_cache_size_ = 1024 * 1024 * 10;
+		std::size_t max_file_size_ = 1024 * 1024 * 10;
 		int64_t last_index_ = 0;
 		std::string path_;
 		file current_file_;

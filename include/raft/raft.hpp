@@ -116,7 +116,7 @@ namespace xraft
 				std::bind(&raft::get_last_log_entry_term, this));
 			snapshot_builder_.regist_get_log_start_index(
 				std::bind(&raft::get_log_start_index, this));
-			snapshot_builder_.set_snapshot_distance(1024);//for test
+			snapshot_builder_.set_snapshot_distance(10240000);//for test
 
 			snapshot_builder_.start();
 		}
@@ -190,6 +190,13 @@ namespace xraft
 			append_entries_response response;
 			response.success_ = false;
 			response.term_ = current_term_;
+			
+			std::cout 
+				<< "request.term_ :" 
+				<< request.term_ 
+				<< " current_term_:" 
+				<< current_term_<< std::endl;
+
 			if (request.term_ < current_term_)
 				//todo log Warm
 				return response;
@@ -208,22 +215,26 @@ namespace xraft
 				//todo log Warm
 			}
 			xnet::guard guard([this] { set_election_timer(); });
-			if (request.prev_log_term_ == get_last_log_entry_term() &&
-				request.prev_log_index_ > get_last_log_entry_index())
-				return response;
-
 			
+
+			std::cout << "request.prev_log_index_ :"
+				<< request.prev_log_index_
+				<< " get_log_start_index() "
+				<< get_log_start_index() << std::endl;
+
+			if (request.prev_log_index_ > get_last_log_entry_index())
+			{
+				response.last_log_index_ = get_last_log_entry_index();
+				return response;
+			}
+
 			if (request.prev_log_index_ > get_log_start_index() &&
 				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
 			{
-
-				//todo log Warm
+				response.last_log_index_ = request.prev_log_index_ - 1;
 				return response;
 			}
-			std::cout << "request.prev_log_index_ :" 
-				<< request.prev_log_index_
-				<< " get_log_start_index() " 
-				<< get_log_start_index() << std::endl;
+		
 
 			response.success_ = true;
 			auto check_log = true;

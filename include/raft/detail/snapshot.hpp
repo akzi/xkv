@@ -192,7 +192,7 @@ namespace xraft
 			build_snapshot_callback build_snapshot_;
 			build_snapshot_done_callback build_snapshot_done_;
 			bool is_stop_ = false;
-			int64_t distance_;
+			int64_t distance_ = 10000;
 			std::thread worker_;
 		};
 	}
