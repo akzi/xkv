@@ -135,6 +135,42 @@ int main(int args, char **argc)
 			if (_client.del(key))
 				std::cout << cmd << "[" << key << "]" << std::endl;
 		}
+		else if (cmd == "q")
+			return 0;
+		else
+		{
+			std::size_t  count = std::strtoul(cmd.c_str(), 0, 10);
+			if (count > 0)
+			{
+				std::getline(std::cin, cmd);
+				if (cmd == "set")
+				{
+					for (size_t i = 0; i < count; i++)
+					{
+						if (_client.set(std::to_string(i), std::to_string(i)))
+							std::cout << cmd << " [" << i << " : " << i << "]" << std::endl;
+					}
+				}
+				else if (cmd == "get")
+				{
+					for (size_t i = 0; i < count; i++)
+					{
+						std::string value;
+						if (_client.get(std::to_string(i), value))
+							std::cout << cmd << " [" << i << " : " << value << "]" << std::endl;
+					}
+				}
+				else if (cmd == "del")
+				{
+					for (size_t i = 0; i < count; i++)
+					{
+						if (_client.del(std::to_string(i)))
+							std::cout << cmd << " [" << i << "]" << std::endl;
+					}
+					
+				}
+			}
+		}
 	} while (true);
 	return 0;
 }

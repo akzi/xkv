@@ -91,8 +91,9 @@ namespace detail
 						continue;
 					}
 					auto request = build_append_entries_request_(next_index_);
-					if (request.entries_.empty() && next_index_)
+					if (request.entries_.empty() && next_index_ < index)
 					{
+						std::cout << "next_index_ :" << next_index_ << " index:" << index << std::endl;
 						send_install_snapshot_req();
 						continue;
 					}
@@ -277,6 +278,10 @@ namespace detail
 		}
 		void do_election()
 		{
+			int faileds = 3;
+			if (faileds == 0)
+				return;
+		try_again:
 			if (!check_rpc())
 				return;
 			auto req = build_vote_request_();
@@ -293,6 +298,8 @@ namespace detail
 			{
 				std::cout << e.what() << std::endl;
 				rpc_client_.release();
+				faileds--;
+				goto try_again;
 			}
 		}
 

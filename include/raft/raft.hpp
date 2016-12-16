@@ -212,12 +212,19 @@ namespace xraft
 				request.prev_log_index_ > get_last_log_entry_index())
 				return response;
 
+			
 			if (request.prev_log_index_ > get_log_start_index() &&
 				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
 			{
+
 				//todo log Warm
 				return response;
 			}
+			std::cout << "request.prev_log_index_ :" 
+				<< request.prev_log_index_
+				<< " get_log_start_index() " 
+				<< get_log_start_index() << std::endl;
+
 			response.success_ = true;
 			auto check_log = true;
 			for (auto &itr : request.entries_)
@@ -260,10 +267,18 @@ namespace xraft
 			TRACE;
 			vote_response response;
 			auto is_ok = false;
-			if (request.last_log_term_ > get_last_log_entry_term() ||
-				(request.last_log_term_ == get_last_log_entry_term() &&
-					request.last_log_index_ >= get_last_log_entry_index()))
+			if (request.last_log_term_ > get_last_log_entry_term())
+			{
+				std::cout << "request.last_log_term_ :" << request.last_log_term_ << " get_last_log_entry_term():" << get_last_log_entry_term() << std::endl;
 				is_ok = true;
+			}
+
+			if (request.last_log_term_ == get_last_log_entry_term() && request.last_log_index_ >= get_last_log_entry_index())
+			{
+				std::cout << "request.last_log_term_ :"<< request.last_log_term_ <<" request.last_log_index_ :" << get_last_log_entry_index()<< std::endl;
+				is_ok = true;
+			}
+				
 			//todo hold votes check
 
 			if (request.term_ > current_term_)

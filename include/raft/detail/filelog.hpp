@@ -74,9 +74,10 @@ namespace detail
 				data_file_.read((char*)&len, sizeof(uint32_t));
 				if (!data_file_.good())
 				{
+					bool ret = data_file_.eof();
 					data_file_.clear(data_file_.goodbit);
 					data_file_.seekp(0, std::ios::end);
-					return data_file_.eof();
+					return ret;
 				}
 				std::string buffer;
 				buffer.resize(len);
@@ -182,10 +183,11 @@ namespace detail
 				index_file_.seekg(-(int32_t)(sizeof(int64_t) * 2), std::ios::end);
 				index_file_.read((char*)&last_log_index_, sizeof(last_log_index_));
 				index_file_.seekp(0, std::ios::end);
-				if (index_file_.gcount() != sizeof(last_log_index_))
+				if (index_file_.gcount() != sizeof(last_log_index_) || !index_file_.good())
 				{
+					index_file_.clear(index_file_.goodbit);
 					last_log_index_ = -1;
-					return -1;
+					return 0;
 				}
 			}
 			return last_log_index_;
@@ -270,7 +272,7 @@ namespace detail
 				index_file_.read(buffer, sizeof(buffer));
 				index_file_.seekp(0, std::ios::end);
 				if (index_file_.gcount() != sizeof(buffer))
-					return -1;
+					return 0;
 				log_index_start_ = *(int64_t*)(buffer);
 			}
 			return log_index_start_;
@@ -366,12 +368,6 @@ namespace detail
 		std::list<log_entry> get_log_entries(int64_t index, std::size_t count = 10)
 		{
 			std::unique_lock<std::mutex> lock(mtx_);
-			if (logfiles_.size())
-			{
-				if (index < logfiles_.begin()->second.get_log_start() ||
-					index > logfiles_.rbegin()->second.get_last_log_index())
-					return{};
-			}
 			std::list<log_entry> log_entries;
 			get_entries_from_cache(log_entries, index, count);
 			if (count == 0)

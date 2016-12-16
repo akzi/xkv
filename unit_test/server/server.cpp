@@ -16,7 +16,10 @@ public:
 		port_ = port;
 		init_raft();
 		init_rpc();
-		metadata_.init(std::to_string(port));
+		if (!metadata_.init(std::to_string(port) + "/"))
+		{
+			throw std::runtime_error("init metadata error");
+		}
 	}
 private:
 	struct sync_t
@@ -45,13 +48,15 @@ private:
 			}
 		});
 		raft_.regist_install_snapshot_handle(
-			[](std::ifstream &file) {
-		
+			[this](std::ifstream &file) 
+		{
+			metadata_.clear();
+
 		});
 		raft_.regist_build_snapshot_callback(
-			[](const std::function<bool(const std::string &)>& writer, int64_t index) {
-
-			return true;
+			[this](const std::function<bool(const std::string &)>& writer, int64_t index) {
+			std::cout << "build_snapshot_callback" << std::endl;
+			return metadata_.write_snapshot(writer);
 		});
 		raft_.init(config_);
 	}
@@ -77,20 +82,24 @@ private:
 			endec::put(ptr, key);
 			endec::put(ptr, value);
 
-			bool result = false;
+			bool raft_status = false;
 			auto sync = get_sync_item();
 			raft_.replicate(std::move(log), 
-				[this, &result, &sync](bool value, int64_t index){
+				[&](bool status, int64_t index){
 					std::unique_lock<std::mutex> locker_(sync->mtx_);
 					std::cout << index << std::endl;
-					result = value;
+					raft_status = status;
+					if (raft_status)
+					{
+						if (!metadata_.set(key, value))
+							throw std::runtime_error("set error");
+					}
 					sync->cv_.notify_one();
 			});
 			std::unique_lock<std::mutex> locker(sync->mtx_);
 			sync->cv_.wait(locker);
-			if (result)
+			if (raft_status)
 			{
-				metadata_.set(key, value);
 				return{ true,{} };
 			}
 			return { false, "raft error" };
@@ -111,7 +120,7 @@ private:
 			if (!raft_.check_leader())
 				return{ false, "no leader" };
 
-			std::string cmd("set");
+			std::string cmd("del");
 			std::string log;
 			log.resize(endec::get_sizeof(cmd) +
 				endec::get_sizeof(key));
@@ -121,19 +130,27 @@ private:
 
 			bool result = false;
 			auto sync = get_sync_item();
+			bool del_ok_ = false;
 			raft_.replicate(std::move(log), 
-				[this, &result, &sync](bool value, int64_t index){
+				[&](bool value, int64_t index){
 				std::unique_lock<std::mutex> locker_(sync->mtx_);
 				std::cout << index << std::endl;
 				result = value;
+				if (value)
+				{
+					if (metadata_.del(key))
+						del_ok_ = true;
+				}
 				sync->cv_.notify_one();
 			});
 			std::unique_lock<std::mutex> locker(sync->mtx_);
 			sync->cv_.wait(locker);
 			if (result)
 			{
-				if (metadata_.del(key))
+				if (del_ok_)
+				{
 					return{ true,{} };
+				}
 				return{ false, "noexist" };
 			}
 			return{ false, "raft error" };
@@ -176,12 +193,13 @@ int main(int args, char **argc)
 	{
 		server::raft_config config;
 		config.append_log_timeout_ = 10000;
-		config.election_timeout_ = 10000;
+		config.election_timeout_ = 3000;
+		config.heartbeat_interval_ = 1000;
 		config.metadata_base_path_ = "9001/data/metadata/";
 		config.raftlog_base_path_ = "9001/data/log/";
 		config.snapshot_base_path_ = "9001/data/snapshot/";
 		config.myself_ = { "127.0.0.1",9011,"9011" };
-		config.nodes_ = { { "127.0.0.1", 9012, "9012" }/*,{ "127.0.0.1", 9003, "9003" } */ };
+		config.peers_ = { { "127.0.0.1", 9012, "9012" }/*,{ "127.0.0.1", 9003, "9003" } */ };
 
 		server _server;
 		_server.init(config, "127.0.0.1", 9001);
@@ -190,14 +208,14 @@ int main(int args, char **argc)
 	else if (argc[1] == std::string("9002"))
 	{
 		server::raft_config config;
-		config.append_log_timeout_ = 20000;
-		config.election_timeout_ = 10000;
-		config.heartbeat_interval_ = 10000;
+		config.append_log_timeout_ = 10000;
+		config.election_timeout_ = 3000;
+		config.heartbeat_interval_ = 1000;
 		config.metadata_base_path_ = "9002/data/metadata/";
 		config.raftlog_base_path_ = "9002/data/log/";
 		config.snapshot_base_path_ = "9002/data/snapshot/";
 		config.myself_ = { "127.0.0.1",9012,"9012" };
-		config.nodes_ = { { "127.0.0.1", 9011, "9011" }/*,{ "127.0.0.1", 9003, "9003" } */ };
+		config.peers_ = { { "127.0.0.1", 9011, "9011" }/*,{ "127.0.0.1", 9003, "9003" } */ };
 
 		server _server;
 		_server.init(config, "127.0.0.1", 9002);

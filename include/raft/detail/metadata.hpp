@@ -32,6 +32,20 @@ namespace detail
 			max_log_file_ = 0;
 			make_snapshot();
 		}
+		void clear()
+		{
+			std::lock_guard<mutex> lock(mtx_);
+			string_map_.clear();
+			integral_map_.clear();
+			log_.close();
+			std::vector<std::string> files = functors::fs::ls_files()(path_);
+			if (files.empty())
+				return;
+			for (auto &itr: files)
+			{
+				functors::fs::rm()(itr);
+			}
+		}
 		bool init(const std::string &path)
 		{
 			if (!functors::fs::mkdir()(path))
@@ -88,7 +102,26 @@ namespace detail
 			value = itr->second;
 			return true;
 		}
-		
+		bool write_snapshot(const std::function<bool(const std::string &)>& writer)
+		{
+			std::lock_guard<mutex> lock(mtx_);
+			for (auto &itr : string_map_)
+			{
+				std::string log = build_log(itr.first, itr.second, op::e_set);
+				uint8_t buf[sizeof(uint32_t)];
+				uint8_t *ptr = buf;
+				endec::put_uint32(ptr, (uint32_t)log.size());
+				if (!writer(std::string((char*)buf, sizeof(buf))))
+					return false;
+				if (!writer(log))
+					return false;
+			}
+			return true;
+		}
+		void load_snapshot(std::ifstream &file)
+		{
+			load_fstream(file);
+		}
 	private:
 		std::string build_log(const std::string &key, const std::string &value,op _op)
 		{
@@ -305,9 +338,12 @@ namespace detail
 		bool reopen_log(bool trunc = true)
 		{
 			log_.close();
-			int mode = std::ios::binary | std::ios::out | std::ios::ate;
+			int mode = std::ios::binary | std::ios::out ;
 			if (trunc)
 				mode |= std::ios::trunc;
+			else
+				mode |= std::ios::app;
+
 			log_.open(get_log_file().c_str(), mode);
 			touch_metadata_file();
 			return log_.good();
