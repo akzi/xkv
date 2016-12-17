@@ -67,7 +67,10 @@ namespace xraft
 				throw std::runtime_error("raft log init failed");
 			}
 			log_.set_make_snapshot_trigger([this] {
-				snapshot_builder_.do_make_snapshot();
+
+				commiter_.push([this] {
+					snapshot_builder_.make_snapshot();
+				});
 			});
 		}
 		void load_metadata()
@@ -226,11 +229,7 @@ namespace xraft
 				<< " get_log_start_index() "
 				<< get_log_start_index() << std::endl;
 
-			if (request.prev_log_index_ > get_last_log_entry_index())
-			{
-				response.last_log_index_ = get_last_log_entry_index();
-				return response;
-			}
+			
 			if (last_snapshot_index_ > get_log_start_index())
 			{
 				if (request.prev_log_index_ != last_snapshot_index_ ||
@@ -239,6 +238,11 @@ namespace xraft
 					response.last_log_index_ = last_snapshot_index_;
 					return response;
 				}
+			}
+			else if (request.prev_log_index_ > get_last_log_entry_index())
+			{
+				response.last_log_index_ = get_last_log_entry_index();
+				return response;
 			}
 			else if (request.prev_log_index_ > get_log_start_index() &&
 				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
@@ -602,10 +606,28 @@ namespace xraft
 		}
 		std::string get_snapshot_filepath()
 		{
+			struct snapshort_comper 
+			{
+				std::uint32_t get_file_num(const std::string &filepath)
+				{
+					auto pos = filepath.find_last_of('\\');
+					if (pos == std::string::npos)
+						pos = filepath.find_last_of('/');
+					if (pos == std::string::npos)
+						return std::strtoul(filepath.c_str(), 0, 10);
+					++pos;
+					auto filename = filepath.substr(pos, filepath.size() - pos);
+					return std::strtoul(filename.c_str(), 0, 10);
+				}
+				bool operator()(const std::string &left, const std::string &right)
+				{
+					return get_file_num(left) > get_file_num(right);
+				}
+			};
 			auto files = functors::fs::ls_files()(snapshot_base_path_);
 			if (files.empty())
 				return	{};
-			std::sort(files.begin(), files.end(),std::greater<std::string>());
+			std::sort(files.begin(), files.end(), snapshort_comper());
 			return files[0];
 		}
 		void append_entries_callback(const std::vector<int64_t> &indexs)
@@ -639,7 +661,10 @@ namespace xraft
 		void make_snapshot_done_callback(int64_t index)
 		{
 			log_.set_make_snapshot_trigger([this] {
-				snapshot_builder_.do_make_snapshot();
+
+				commiter_.push([this] {
+					snapshot_builder_.make_snapshot();
+				});
 			});
 			log_.truncate_prefix(index);
 

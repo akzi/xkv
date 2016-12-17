@@ -150,15 +150,12 @@ namespace xraft
 			{
 				build_snapshot_done_ = callback;
 			}
-			void do_make_snapshot()
+			void make_snapshot()
 			{
-				worker_ = std::thread([this] {
-					run();
-				});
-				worker_.detach();
+				do_make_snapshot();
 			}
 		private:
-			void run()
+			void do_make_snapshot()
 			{
 				snapshot_head head;
 				auto commit_index = get_last_commit_index_();

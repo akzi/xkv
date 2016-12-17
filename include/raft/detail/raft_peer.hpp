@@ -159,25 +159,29 @@ namespace detail
 		{
 			TRACE;
 			if (!check_rpc())
+			{
 				throw std::runtime_error("connect to peer failed" + myself_.ip_
 					+ ":" + std::to_string(myself_.port_));
+			}
 
-			struct RPC
-			{
-				DEFINE_RPC_PROTO(install_snapshot_request,
-					detail::install_snapshot_response(detail::install_snapshot_request));
-			};
-			auto filepath = get_snapshot_path_();
 			snapshot_reader reader;
-			
+			snapshot_head head;
+
+			auto filepath = get_snapshot_path_();
 			if (!reader.open(filepath))
 			{
 				std::cout << "open file :" + filepath << " error" << std::endl;
 				return;
 			}
-			snapshot_head head;
-			reader.read_sanpshot_head(head);
+			if (!reader.read_sanpshot_head(head))
+				throw std::runtime_error("read_sanpshot_head failed");
 
+			if (head.last_included_term_ > get_current_term_() ||
+				head.last_included_term_ > get_last_log_index_())
+			{
+				throw std::runtime_error("error snapshot");
+			}
+			
 			std::ifstream &file = reader.get_snapshot_stream();
 			file.seekg(0, std::ios::beg);
 			do
@@ -197,6 +201,12 @@ namespace detail
 				request.done_ = file.eof();
 				try
 				{
+					struct RPC
+					{
+						DEFINE_RPC_PROTO(install_snapshot_request,
+							detail::install_snapshot_response(detail::install_snapshot_request));
+					};
+
 					auto resp = rpc_client_->rpc_call<RPC::install_snapshot_request>(request);
 					if (resp.term_ > request.term_)
 					{
