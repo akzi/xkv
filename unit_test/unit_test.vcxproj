@@ -38,6 +38,7 @@
     <ClCompile Include="filelog.cpp" />
     <ClCompile Include="metadata.cpp" />
     <ClCompile Include="raft.cpp" />
+    <ClCompile Include="snapshot_test.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{361F45D5-0378-4012-B1C5-CB72C794183D}</ProjectGuid>

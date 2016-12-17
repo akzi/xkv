@@ -67,10 +67,12 @@ namespace xraft
 				throw std::runtime_error("raft log init failed");
 			}
 			log_.set_make_snapshot_trigger([this] {
-
-				commiter_.push([this] {
-					snapshot_builder_.make_snapshot();
-				});
+				if (check_leader())
+				{
+					commiter_.push([this] {
+						snapshot_builder_.make_snapshot();
+					});
+				}
 			});
 		}
 		void load_metadata()
@@ -114,18 +116,21 @@ namespace xraft
 		void init_snapshot_builder()
 		{
 			snapshot_builder_.set_snapshot_base_path(snapshot_base_path_);
+			
 			snapshot_builder_.regist_build_snapshot_callback(
 				std::bind(&raft::make_snapshot_callback, this,
 					std::placeholders::_1, std::placeholders::_2));
+
 			snapshot_builder_.regist_build_snapshot_done_callback(
 				std::bind(&raft::make_snapshot_done_callback, this, 
 					std::placeholders::_1));
-			snapshot_builder_.regist_get_last_commit_index(
-				std::bind(&raft::get_last_log_entry_index, this));
-			snapshot_builder_.regist_get_log_entry_term_handle(
-				std::bind(&raft::get_last_log_entry_term, this));
-			snapshot_builder_.regist_get_log_start_index(
-				std::bind(&raft::get_log_start_index, this));
+
+			snapshot_builder_.regist_get_last_commit_index([this] {
+				return get_last_log_entry_index(); });
+
+			snapshot_builder_.regist_get_log_entry_term_handle([this](int64_t index) {
+				return get_log_entry(index).term_;
+			});
 		}
 		void init_rpc()
 		{
@@ -192,18 +197,11 @@ namespace xraft
 		append_entries_response 
 			handle_append_entries_request(append_entries_request & request)
 		{
-			TRACE;
 			std::lock_guard<std::mutex> locker(mtx_);
 			append_entries_response response;
 			response.success_ = false;
 			response.term_ = current_term_;
 			
-			std::cout 
-				<< "request.term_ :" 
-				<< request.term_ 
-				<< " current_term_:" 
-				<< current_term_<< std::endl;
-
 			if (request.term_ < current_term_)
 				//todo log Warm
 				return response;
@@ -223,14 +221,7 @@ namespace xraft
 			}
 			xnet::guard guard([this] { set_election_timer(); });
 			
-
-			std::cout << "request.prev_log_index_ :"
-				<< request.prev_log_index_
-				<< " get_log_start_index() "
-				<< get_log_start_index() << std::endl;
-
-			
-			if (last_snapshot_index_ > get_log_start_index())
+			if (last_snapshot_index_ > get_last_log_entry_index())
 			{
 				if (request.prev_log_index_ != last_snapshot_index_ ||
 					request.prev_log_term_ != last_snapshot_term_)
@@ -244,11 +235,18 @@ namespace xraft
 				response.last_log_index_ = get_last_log_entry_index();
 				return response;
 			}
-			else if (request.prev_log_index_ > get_log_start_index() &&
-				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
+			else if (request.prev_log_index_ != last_snapshot_index_)
 			{
-				response.last_log_index_ = request.prev_log_index_ - 1;
-				return response;
+				if (request.prev_log_index_ > get_log_start_index())
+				{
+					auto entry = get_log_entry(request.prev_log_index_);
+					if (entry.term_ != request.prev_log_term_)
+					{
+						response.last_log_index_ = request.prev_log_index_ - 1;
+						return response;
+					}
+				}
+				
 			}
 		
 
@@ -292,7 +290,6 @@ namespace xraft
 		}
 		vote_response handle_vote_request(const vote_request &request)
 		{
-			TRACE;
 			vote_response response;
 			auto is_ok = false;
 			if (request.last_log_term_ > get_last_log_entry_term())
@@ -427,7 +424,6 @@ namespace xraft
 		}
 		void step_down(int64_t new_term)
 		{
-			TRACE;
 			std::cout << new_term << std::endl;
 			if (current_term_ < new_term)
 			{
@@ -452,9 +448,11 @@ namespace xraft
 		}
 		void set_election_timer()
 		{
-			TRACE;
 			cancel_election_timer();
-			election_timer_id_ = timer_.set_timer(election_timeout_ ,[this] {
+			std::random_device rd;
+			std::mt19937 gen(rd());
+			std::uniform_int_distribution<> dis(1, (int)election_timeout_);
+			election_timer_id_ = timer_.set_timer(election_timeout_+ dis(gen),[this] {
 				std::cout << "------election timer callback------" << std::endl;
 				std::lock_guard<std::mutex> lock(mtx_);
 				set_term(current_term_ + 1);
@@ -525,7 +523,6 @@ namespace xraft
 		}
 		append_entries_request build_append_entries_request(int64_t index)
 		{
-			TRACE;
 			append_entries_request request;
 			
 			request.term_ = current_term_;
@@ -591,7 +588,6 @@ namespace xraft
 		}
 		void cancel_election_timer()
 		{
-			TRACE;
 			timer_.cancel(election_timer_id_);
 		}
 		vote_request build_vote_request()
@@ -660,14 +656,6 @@ namespace xraft
 		}
 		void make_snapshot_done_callback(int64_t index)
 		{
-			log_.set_make_snapshot_trigger([this] {
-
-				commiter_.push([this] {
-					snapshot_builder_.make_snapshot();
-				});
-			});
-			log_.truncate_prefix(index);
-
 			snapshot_reader reader;
 			auto filepath = get_snapshot_filepath();
 			if (!reader.open(filepath))
@@ -676,10 +664,26 @@ namespace xraft
 				throw std::runtime_error("open file :" + filepath + " error");
 			}
 			snapshot_head head;
-			reader.read_sanpshot_head(head);
-
+			if (!reader.read_sanpshot_head(head))
+			{
+				throw std::runtime_error("read_sanpshot_head error");
+			}
+			if (head.last_included_index_ > get_last_log_entry_index() ||
+				head.last_included_term_ > current_term_)
+			{
+				std::cout << "make_snapshot_done_callback error" << std::endl;
+			}
+			
 			set_last_snapshot_index(head.last_included_index_);
 			set_last_snapshot_term(head.last_included_term_);
+
+			log_.set_make_snapshot_trigger([this] {
+
+				commiter_.push([this] {
+					snapshot_builder_.make_snapshot();
+				});
+			});
+			log_.truncate_prefix(index);
 		}
 		int64_t get_last_log_entry_term()
 		{
@@ -697,9 +701,7 @@ namespace xraft
 		{
 			log_entry entry;
 			if (!log_.get_log_entry(index, entry))
-			{
-				//todo log error;
-			}
+				throw std::runtime_error("get_log_entry failed");
 			return std::move(entry);
 		}
 		void set_voted_for(const std::string &raft_id)

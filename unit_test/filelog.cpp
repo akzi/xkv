@@ -71,6 +71,9 @@ XTEST_SUITE(filelog)
 		}
 	}
 #endif 
+	
+	
+#if 0
 	XUNIT_TEST(truncate_suffix)
 	{
 		filelog flog;
@@ -98,8 +101,6 @@ XTEST_SUITE(filelog)
 		index = flog.get_last_log_entry_term();
 		index = flog.get_log_start_index();
 	}
-	
-#if 0
 	XUNIT_TEST(write_get_log_entries)
 	{
 		filelog flog;

@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <algorithm>  
 #include <atomic>
-
+#include <random>
 
 //deps
 #include "../../../../xsimple_rpc/include/xsimple_rpc.hpp"

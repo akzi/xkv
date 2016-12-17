@@ -5,7 +5,8 @@ public:
 	using raft_config = xraft::raft::raft_config;
 
 	server()
-		:rpc_server_(rpc_proactor_pool_)
+		:rpc_proactor_pool_(1)
+		,rpc_server_(rpc_proactor_pool_)
 	{
 
 	}
@@ -106,6 +107,8 @@ private:
 		});
 		rpc_server_.regist("get", [this](const std::string &key) ->std::pair<bool, std::string>
 		{
+			xnet::guard do_log([&] {std::cout << key << std::endl; });
+
 			if (!raft_.check_leader())
 				return{ false, "no leader" };
 			std::string value;

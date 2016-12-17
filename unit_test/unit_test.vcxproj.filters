@@ -65,5 +65,8 @@
     <ClCompile Include="raft.cpp">
       <Filter>unit_test</Filter>
     </ClCompile>
+    <ClCompile Include="snapshot_test.cpp">
+      <Filter>unit_test</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

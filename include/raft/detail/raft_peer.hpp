@@ -87,7 +87,6 @@ namespace detail
 						next_index_ = index;
 					if (index == match_index_ && send_heartbeat_)
 					{
-						std::cout << "index :" << index << "match_index_ :" << match_index_ << std::endl;
 						send_heartbeat_ = false;
 						do_sleep(next_heartbeat_delay());
 						continue;
@@ -95,7 +94,6 @@ namespace detail
 					auto request = build_append_entries_request_(next_index_);
 					if (request.entries_.empty() && next_index_ < index)
 					{
-						std::cout << "next_index_ :" << next_index_ << " index:" << index << std::endl;
 						send_install_snapshot_req();
 						continue;
 					}
@@ -157,7 +155,6 @@ namespace detail
 
 		void send_install_snapshot_req()
 		{
-			TRACE;
 			if (!check_rpc())
 			{
 				throw std::runtime_error("connect to peer failed" + myself_.ip_
@@ -176,12 +173,6 @@ namespace detail
 			if (!reader.read_sanpshot_head(head))
 				throw std::runtime_error("read_sanpshot_head failed");
 
-			if (head.last_included_term_ > get_current_term_() ||
-				head.last_included_term_ > get_last_log_index_())
-			{
-				throw std::runtime_error("error snapshot");
-			}
-			
 			std::ifstream &file = reader.get_snapshot_stream();
 			file.seekg(0, std::ios::beg);
 			do
@@ -195,7 +186,7 @@ namespace detail
 				request.last_snapshot_index_ = head.last_included_index_;
 				request.offset_ = file.tellg();
 				std::cout << "request.offset_: " << request.offset_ << std::endl;
-				request.data_.resize(20);
+				request.data_.resize(1024*1024);
 				file.read((char*)request.data_.data(), request.data_.size());
 				request.data_.resize(file.gcount());
 				request.done_ = file.eof();
@@ -296,9 +287,9 @@ namespace detail
 					rpc_proactor_pool_.connect(myself_.ip_, myself_.port_, 0)));
 				connect_callback_(*this, true);
 			}
-			catch (const std::exception &e)
+			catch (const std::exception &)
 			{
-				std::cout << e.what() << std::endl;
+				std::cout << "connect peer: [" << myself_.ip_ << ":" << myself_.port_ << "] failed" << std::endl;
 			}
 		}
 		bool check_rpc()
