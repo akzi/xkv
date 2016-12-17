@@ -319,10 +319,7 @@ namespace detail
 			check_apply(functors::fs::mkdir()(path_));
 			auto files = functors::fs::ls_files()(path_);
 			if (files.empty())
-			{
-				if (!current_file_.is_open())
-					return current_file_.open( path_ + std::to_string(0) + ".log");
-			}
+				return true;
 			for (auto &itr : files)
 			{
 				if (itr.find(".log") != std::string::npos)
@@ -341,13 +338,24 @@ namespace detail
 		bool write(detail::log_entry &&entry, int64_t &index)
 		{
 			std::lock_guard<std::mutex> lock(mtx_);
-			++last_index_;
-			index = last_index_;
-			entry.index_ = last_index_;
+			if (entry.index_)
+			{
+				last_index_ = entry.index_;
+			}
+			else
+			{
+				++last_index_;
+				index = last_index_;
+				entry.index_ = last_index_;
+			}
 			std::string buffer = entry.to_string();
 			log_entries_cache_size_ += buffer.size();
 			log_entries_cache_.emplace_back(std::move(entry));
 			check_log_entries_size();
+			if (!current_file_.is_open())
+			{
+				current_file_.open(path_ + std::to_string(entry.index_) + ".log");
+			}
 			check_apply(current_file_.write(last_index_, std::move(buffer)));
 			check_current_file_size();
 			return true;
@@ -357,9 +365,12 @@ namespace detail
 			std::lock_guard<std::mutex> lock(mtx_);
 			if (get_entry_from_cache(entry, index))
 				return true;
-			if (current_file_.get_log_start() <= index &&
+			if (current_file_.is_open() && 
+				current_file_.get_log_start() <= index &&
 				index <= current_file_.get_last_log_index())
+			{
 				return current_file_.get_entry(index, entry);
+			}
 			for (auto itr = logfiles_.begin(); itr != logfiles_.end(); ++itr)
 			{
 				auto &f = itr->second;
@@ -394,7 +405,8 @@ namespace detail
 			get_entries_from_cache(log_entries, index, count);
 			if (count == 0)
 				return std::move(log_entries);
-			if (index <= current_file_.get_last_log_index() &&
+			if (current_file_.is_open() && 
+				index <= current_file_.get_last_log_index() &&
 				current_file_.get_log_start() <= index)
 			{
 				if (!current_file_.get_log_entries(index, count, log_entries, lock))
@@ -432,19 +444,16 @@ namespace detail
 				}
 				++itr;
 			}
-			if (index == current_file_.get_last_log_index())
+			if (current_file_.is_open() && index == current_file_.get_last_log_index())
 			{
 				current_file_.rm();
 			}
-			else if (current_file_.get_log_start() <= index &&
-				index < current_file_.get_last_log_index())
+			else if ( current_file_.is_open () && 
+						current_file_.get_log_start() <= index &&
+						index < current_file_.get_last_log_index())
 			{
 				current_file_.truncate_prefix(index);
 			}
-			if (current_file_.is_open())
-				last_index_ = current_file_.get_last_log_index();
-			else
-				last_index_ = index;
 		}
 		void truncate_suffix(int64_t index)
 		{
@@ -463,10 +472,17 @@ namespace detail
 				{
 					itr->second.truncate_suffix(index);
 					current_file_.rm();
-					current_file_ = std::move(itr->second);
-					last_index_ = current_file_.get_last_log_index();
-					logfiles_.erase(itr);
-					break;
+					last_index_ = index - 1;
+					if (last_index_ < 0)
+						last_index_ = 0;
+					if (itr->second.get_last_log_index() > 0)
+					{
+						current_file_ = std::move(itr->second);
+						last_index_ = current_file_.get_last_log_index();
+						logfiles_.erase(itr);
+						break;
+					}
+					
 				}
 			}
 			for (auto itr = logfiles_.upper_bound(index); itr != logfiles_.end();)
@@ -492,7 +508,7 @@ namespace detail
 			std::lock_guard<std::mutex> lock(mtx_);
 			if (logfiles_.size())
 				return logfiles_.begin()->second.get_log_start();
-			else
+			else if(current_file_.is_open())
 				return current_file_.get_log_start();
 			return 0;
 		}

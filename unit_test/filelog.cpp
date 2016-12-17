@@ -46,15 +46,13 @@ XTEST_SUITE(filelog)
 		entries = flog.get_log_entries(1, 300);
 		entries = flog.get_log_entries(1, 300);
 	}
-#endif 
-
 	XUNIT_TEST(test_reload_9001log)
 	{
 		filelog flog;
 		xassert(flog.init("9001/data/log/"));
 		auto entries = flog.get_log_entries(1, 300);
 
-		for (auto &itr: entries)
+		for (auto &itr : entries)
 		{
 			std::cout << itr.index_ << std::endl;
 
@@ -72,6 +70,35 @@ XTEST_SUITE(filelog)
 
 		}
 	}
+#endif 
+	XUNIT_TEST(truncate_suffix)
+	{
+		filelog flog;
+		xassert(flog.init("data/truncate_suffix/"));
+		log_entry entry;
+		entry.log_data_ = "hello world";
+		entry.term_ = 1000;
+		entry.type_ = log_entry::type::e_append_log;
+		int64_t index;
+		for (size_t i = 0; i < 500; i++)
+		{
+			entry.index_ = 0;
+			xassert(flog.write(std::move(entry), index));
+		}
+		flog.truncate_suffix(1);
+		auto entries = flog.get_log_entries(1, 300);
+		int i = 1;
+		for (auto &itr : entries)
+		{
+			xassert(itr.index_ == i);
+			i++;
+		}
+
+		index = flog.get_last_index();
+		index = flog.get_last_log_entry_term();
+		index = flog.get_log_start_index();
+	}
+	
 #if 0
 	XUNIT_TEST(write_get_log_entries)
 	{
@@ -120,28 +147,7 @@ XTEST_SUITE(filelog)
 		}
 
 	}
-	XUNIT_TEST(truncate_suffix)
-	{
-		filelog flog;
-		xassert(flog.init("data/truncate_suffix/"));
-		log_entry entry;
-		entry.log_data_ = "hello world";
-		entry.term_ = 1000;
-		entry.type_ = log_entry::type::e_append_log;
-		int64_t index;
-		for (size_t i = 0; i < 200; i++)
-		{
-			xassert(flog.write(std::move(entry), index));
-		}
-		flog.truncate_suffix(101);
-		auto entries = flog.get_log_entries(1, 300);
-		int i = 1;
-		for (auto &itr : entries)
-		{
-			xassert(itr.index_ == i);
-			i++;
-		}
-	}
+	
 	XUNIT_TEST(truncate_prefix)
 	{
 		filelog flog;

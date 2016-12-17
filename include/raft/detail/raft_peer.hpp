@@ -1,4 +1,5 @@
 #pragma once
+#define TRACE std::cout <<__FUNCTION__ <<std::endl;
 namespace xraft
 {
 namespace detail
@@ -108,7 +109,7 @@ namespace detail
 							new_term_callback_(response.term_);
 							return;
 						}
-						next_index_ = response.last_log_index_;
+						next_index_ = response.last_log_index_ + 1;
 						if (next_index_ == 0)
 							next_index_ = 1;
 						continue;
@@ -156,9 +157,14 @@ namespace detail
 
 		void send_install_snapshot_req()
 		{
+			TRACE;
+			if (!check_rpc())
+				throw std::runtime_error("connect to peer failed" + myself_.ip_
+					+ ":" + std::to_string(myself_.port_));
+
 			struct RPC
 			{
-				DEFINE_RPC_PROTO(append_entries_request,
+				DEFINE_RPC_PROTO(install_snapshot_request,
 					detail::install_snapshot_response(detail::install_snapshot_request));
 			};
 			auto filepath = get_snapshot_path_();
@@ -173,6 +179,7 @@ namespace detail
 			reader.read_sanpshot_head(head);
 
 			std::ifstream &file = reader.get_snapshot_stream();
+			file.seekg(0, std::ios::beg);
 			do
 			{
 				if (try_execute_cmd())
@@ -183,23 +190,32 @@ namespace detail
 				request.last_included_term_ = head.last_included_term_;
 				request.last_snapshot_index_ = head.last_included_index_;
 				request.offset_ = file.tellg();
-				request.data_.resize(20 * 1024);
+				std::cout << "request.offset_: " << request.offset_ << std::endl;
+				request.data_.resize(20);
 				file.read((char*)request.data_.data(), request.data_.size());
+				request.data_.resize(file.gcount());
 				request.done_ = file.eof();
 				try
 				{
-					auto resp = rpc_client_->rpc_call<RPC::append_entries_request>(request);
+					auto resp = rpc_client_->rpc_call<RPC::install_snapshot_request>(request);
 					if (resp.term_ > request.term_)
 					{
 						new_term_callback_(resp.term_);
 						return;
 					}
-					else if (resp.bytes_stored_ != file.tellg())
+					else if (resp.bytes_stored_ != 
+							request.offset_ + request.data_.size())
 					{
+						file.clear(file.goodbit);
 						file.seekg(resp.bytes_stored_, std::ios::beg);
 					}
 					else if (request.done_)
+					{
+						std::cout << "send snapshot done " << std::endl;
+						match_index_ = head.last_included_index_;
+						next_index_ = match_index_ + 1;
 						break;
+					}
 				}
 				catch (const std::exception& e)
 				{

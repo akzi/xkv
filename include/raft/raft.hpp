@@ -110,6 +110,7 @@ namespace xraft
 		}
 		void init_snapshot_builder()
 		{
+			snapshot_builder_.set_snapshot_base_path(snapshot_base_path_);
 			snapshot_builder_.regist_build_snapshot_callback(
 				std::bind(&raft::make_snapshot_callback, this,
 					std::placeholders::_1, std::placeholders::_2));
@@ -230,8 +231,16 @@ namespace xraft
 				response.last_log_index_ = get_last_log_entry_index();
 				return response;
 			}
-
-			if (request.prev_log_index_ > get_log_start_index() &&
+			if (last_snapshot_index_ > get_log_start_index())
+			{
+				if (request.prev_log_index_ != last_snapshot_index_ ||
+					request.prev_log_term_ != last_snapshot_term_)
+				{
+					response.last_log_index_ = last_snapshot_index_;
+					return response;
+				}
+			}
+			else if (request.prev_log_index_ > get_log_start_index() &&
 				get_log_entry(request.prev_log_index_).term_ != request.prev_log_term_)
 			{
 				response.last_log_index_ = request.prev_log_index_ - 1;
@@ -356,6 +365,7 @@ namespace xraft
 			if (request.offset_ != snapshot_writer_.get_bytes_writted())
 			{
 				//todo LOG WRAM
+				response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
 				return response;
 			}
 			if (!snapshot_writer_.write(request.data_))
@@ -383,24 +393,23 @@ namespace xraft
 			{
 				//todo process error;
 			}
-			commiter_.push([&] {
-				snapshot_head head;
-				if (!snapshot_reader_.read_sanpshot_head(head))
-				{
-					//todo process error;
-				}
-				install_snapshot_callback_(snapshot_reader_.get_snapshot_stream());;
-				log_.truncate_suffix(head.last_included_index_);
-
-				if (head.last_included_index_ > committed_index_)
-					set_committed_index(head.last_included_index_);
-			});
-			
+			snapshot_head head;
+			if (!snapshot_reader_.read_sanpshot_head(head))
+			{
+				//todo process error;
+			}
+			set_last_snapshot_index(head.last_included_index_);
+			set_last_snapshot_term(head.last_included_term_);
+			auto &file = snapshot_reader_.get_snapshot_stream();
+			install_snapshot_callback_(file);;
+			log_.truncate_suffix(1);
+			if (head.last_included_index_ > committed_index_)
+				set_committed_index(head.last_included_index_);
 		}
 		void open_snapshot_writer(int64_t index)
 		{
-			if(functors::fs::mkdir()(snapshot_path_))
-				snapshot_writer_.open(snapshot_path_+std::to_string(index)+".SS");
+			if(functors::fs::mkdir()(snapshot_base_path_))
+				snapshot_writer_.open(snapshot_base_path_ +std::to_string(index)+".SS");
 			else
 			{
 				//todo process Error;
@@ -514,21 +523,34 @@ namespace xraft
 		{
 			TRACE;
 			append_entries_request request;
+			
 			request.term_ = current_term_;
-			request.entries_ = log_.get_log_entries(index > 1 ? index -1: index, 100);
 			request.leader_commit_ = committed_index_;
 			request.leader_id_ = myself_.raft_id_;
-			if (request.entries_.size() > 1 && index > 1)
+
+			if (last_snapshot_index_ && index - 1 == last_snapshot_index_)
 			{
-				request.prev_log_index_ = request.entries_.front().index_;
-				request.prev_log_term_ = request.entries_.front().term_;
-				request.entries_.pop_front();
+				request.entries_ = log_.get_log_entries(index, 100);
+				request.prev_log_index_ = last_snapshot_index_;
+				request.prev_log_term_ = last_snapshot_term_;
 			}
-			else 
+			else
 			{
-				request.prev_log_index_ = 0;
-				request.prev_log_term_ = 0;
+				request.entries_ = log_.get_log_entries(index > 1 ? index - 1 : index, 100);
+				
+				if (request.entries_.size() > 1 && index > 1)
+				{
+					request.prev_log_index_ = request.entries_.front().index_;
+					request.prev_log_term_ = request.entries_.front().term_;
+					request.entries_.pop_front();
+				}
+				else
+				{
+					request.prev_log_index_ = last_snapshot_index_;
+					request.prev_log_term_ = last_snapshot_term_;
+				}
 			}
+			
 			
 			return std::move(request);
 		}
@@ -580,7 +602,7 @@ namespace xraft
 		}
 		std::string get_snapshot_filepath()
 		{
-			auto files = functors::fs::ls_files()(snapshot_path_);
+			auto files = functors::fs::ls_files()(snapshot_base_path_);
 			if (files.empty())
 				return	{};
 			std::sort(files.begin(), files.end(),std::greater<std::string>());
@@ -620,6 +642,19 @@ namespace xraft
 				snapshot_builder_.do_make_snapshot();
 			});
 			log_.truncate_prefix(index);
+
+			snapshot_reader reader;
+			auto filepath = get_snapshot_filepath();
+			if (!reader.open(filepath))
+			{
+				std::cout << "open file :" + filepath + " error" << std::endl;
+				throw std::runtime_error("open file :" + filepath + " error");
+			}
+			snapshot_head head;
+			reader.read_sanpshot_head(head);
+
+			set_last_snapshot_index(head.last_included_index_);
+			set_last_snapshot_term(head.last_included_term_);
 		}
 		int64_t get_last_log_entry_term()
 		{
@@ -684,7 +719,7 @@ namespace xraft
 		void set_last_snapshot_index(int64_t index)
 		{
 			last_snapshot_index_ = index;
-			if (metadata_.set("last_snapshot_index", index))
+			if (!metadata_.set("last_snapshot_index", index))
 			{
 				//todo log error;
 				throw std::runtime_error("metadata::set [last_snapshot_index] failed");
@@ -693,7 +728,7 @@ namespace xraft
 		void set_last_snapshot_term(int64_t term)
 		{
 			last_snapshot_term_ = term;
-			if (metadata_.set("last_snapshot_term", term))
+			if (!metadata_.set("last_snapshot_term", term))
 			{
 				//todo log error;
 				throw std::runtime_error("metadata::set [last_snapshot_term] failed");
@@ -735,15 +770,12 @@ namespace xraft
 
 		metadata<> metadata_;
 		std::string metadata_base_path_;
-		std::string metadata_path_ = "data/metadata";
 
 		detail::filelog log_;
-		std::string filelog_path_ = "data/log";
 		std::string filelog_base_path_;
 
 		std::string current_snapshot_;
 		std::string snapshot_base_path_;
-		std::string snapshot_path_ = "data/snapshot/";
 
 		std::vector<vote_response>  vote_responses_;
 	};

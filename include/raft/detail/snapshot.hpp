@@ -20,7 +20,8 @@ namespace xraft
 			bool open(const std::string &filepath)
 			{
 				filepath_ = filepath;
-				assert(!file_.is_open());
+				if (file_.is_open())
+					file_.close();
 				int mode = std::ios::out | std::ios::binary | std::ios::app;
 				file_.open(filepath_.c_str(), mode);
 				return file_.good();
@@ -56,7 +57,7 @@ namespace xraft
 
 			operator bool()
 			{
-				return file_.good();
+				return file_.is_open();
 			}
 			bool open(const std::string &filepath)
 			{
@@ -66,7 +67,6 @@ namespace xraft
 					std::ios::out |
 					std::ios::in |
 					std::ios::trunc |
-					std::ios::app |
 					std::ios::ate;
 				file_.open(filepath_.c_str(), mode);
 				return file_.good();
@@ -124,6 +124,12 @@ namespace xraft
 			{
 				
 			}
+			void set_snapshot_base_path(std::string path)
+			{
+				snapshot_base_path_ = path;
+				if (!functors::fs::mkdir()(snapshot_base_path_))
+					throw std::runtime_error("mkdir "+ snapshot_base_path_+" failed");
+			}
 			void regist_get_last_commit_index(get_last_commit_index_handle handle)
 			{
 				get_last_commit_index_ = handle;
@@ -160,6 +166,9 @@ namespace xraft
 				head.last_included_index_ = commit_index;
 				head.last_included_term_ = get_log_entry_term_(commit_index);
 				snapshot_writer writer;
+				std::string filepath = snapshot_base_path_ + std::to_string(commit_index) + ".ss";
+				if (!writer.open(filepath))
+					throw std::runtime_error("open "+filepath+ "error");
 				writer.write_sanpshot_head(head);
 				auto result = build_snapshot_([&writer](const std::string &buffer)
 				{
@@ -175,6 +184,7 @@ namespace xraft
 				build_snapshot_done_(commit_index);
 				//todo log snapshot done
 			}
+			std::string snapshot_base_path_;
 			get_log_entry_term_handle get_log_entry_term_;
 			get_last_commit_index_handle get_last_commit_index_;
 			get_log_start_index_handle get_log_start_index_;
