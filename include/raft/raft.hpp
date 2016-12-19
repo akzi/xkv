@@ -219,7 +219,7 @@ namespace xraft
 				leader_id_ = request.leader_id_;
 				//todo log Warm
 			}
-			xnet::guard guard([this] { set_election_timer(); });
+			xutil::guard guard([this] { set_election_timer(); });
 			
 			if (last_snapshot_index_ > get_last_log_entry_index())
 			{
@@ -276,7 +276,7 @@ namespace xraft
 			{
 				auto leader_commit_ = request.leader_commit_;
 				commiter_.push([leader_commit_,this] {
-					auto entries = log_.get_log_entries(committed_index_ + 1, 
+					auto entries = log_.get_entries(committed_index_ + 1, 
 						leader_commit_ - committed_index_);
 					for (auto &itr : entries)
 					{
@@ -372,6 +372,8 @@ namespace xraft
 			if (!snapshot_writer_.write(request.data_))
 			{
 				//todo LOG ERROR;
+				snapshot_writer_.discard();
+				response.bytes_stored_ = 0;
 				return response;
 			}
 			response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
@@ -531,13 +533,13 @@ namespace xraft
 
 			if (last_snapshot_index_ && index - 1 == last_snapshot_index_)
 			{
-				request.entries_ = log_.get_log_entries(index, 100);
+				request.entries_ = log_.get_entries(index, 100);
 				request.prev_log_index_ = last_snapshot_index_;
 				request.prev_log_term_ = last_snapshot_term_;
 			}
 			else
 			{
-				request.entries_ = log_.get_log_entries(index > 1 ? index - 1 : index, 100);
+				request.entries_ = log_.get_entries(index > 1 ? index - 1 : index, 100);
 				
 				if (request.entries_.size() > 1 && index > 1)
 				{
@@ -698,11 +700,8 @@ namespace xraft
 			return log_.get_log_start_index();
 		}
 		log_entry get_log_entry(int64_t index)
-		{
-			log_entry entry;
-			if (!log_.get_log_entry(index, entry))
-				throw std::runtime_error("get_log_entry failed");
-			return std::move(entry);
+		{			
+			return log_.get_entry(index);
 		}
 		void set_voted_for(const std::string &raft_id)
 		{

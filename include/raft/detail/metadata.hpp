@@ -43,7 +43,7 @@ namespace detail
 				return;
 			for (auto &itr: files)
 			{
-				functors::fs::rm()(itr);
+				xutil::vfs::unlink()(itr);
 			}
 		}
 		bool init(const std::string &path)
@@ -358,17 +358,17 @@ namespace detail
 		}
 		bool rm_old_files()
 		{
-			if (!functors::fs::rm()(get_old_log_file()))
+			if (!xutil::vfs::unlink()(get_old_log_file()))
 			{
 				//todo log error
 				return false;
 			}
-			if (!functors::fs::rm()(get_old_snapshot_file()))
+			if (!xutil::vfs::unlink()(get_old_snapshot_file()))
 			{
 				//todo log error
 				return false;
 			}
-			if (!functors::fs::rm()(get_old_metadata_file()))
+			if (!xutil::vfs::unlink()(get_old_metadata_file()))
 			{
 				//todo log error
 				return false;

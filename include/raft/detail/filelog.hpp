@@ -8,147 +8,117 @@ namespace detail
 	public:
 		file()
 		{
-
 		}
 		~file()
 		{
-			//stop filelog remove this file immediately .
-			//when someone is  writing or reading.
-			std::lock_guard<std::mutex> lock(mtx_);
 		}
 		void operator = (file &&f)
 		{
-			std::lock_guard<std::mutex> lock(mtx_);
-			std::lock_guard<std::mutex> lock2(f.mtx_);
 			if (&f == this)
 				return;
 			move_reset(std::move(f));
 		}
 		file(file &&self)
 		{
-			std::lock_guard<std::mutex> lock2(self.mtx_);
 			move_reset(std::move(self));
 		}
 		bool open(const std::string &filepath)
 		{
-			std::lock_guard<std::mutex> lock(mtx_);
 			filepath_ = filepath;
 			last_log_index_ = -1;
 			log_index_start_ = -1;
 			return open_no_lock();
 		}
 
-		bool write(int64_t index, std::string &&data)
+		void write(int64_t index, std::string &&data)
 		{
-			std::lock_guard<std::mutex> lock(mtx_);
-
-			check_apply(data_file_.good());
-			check_apply(index_file_.good());
-			int64_t file_pos = data_file_.tellp();
+			int64_t file_pos = data_file_.tell();
 			uint32_t len = (uint32_t)data.size();
-			data_file_.write(reinterpret_cast<char*>(&len), sizeof len);
-			data_file_.write(data.data(), data.size());
-			data_file_.sync();
-			check_apply(data_file_.good());
-			index_file_.write(reinterpret_cast<char*>(&index), sizeof(index));
-			index_file_.write(reinterpret_cast<char*>(&file_pos), sizeof(file_pos));
-			index_file_.sync();
+			if(data_file_.write((char*)&len, sizeof(len)) != sizeof(len))
+				throw std::runtime_error(FILE_LINE + " data_file_ write error");
+			if(data_file_.write(data.data(), data.size()) != data.size())
+				throw std::runtime_error(FILE_LINE + " data_file_ write error");
+			if(!data_file_.sync())
+				throw std::runtime_error(FILE_LINE + " data_file_ sync error");
+			if(index_file_.write(reinterpret_cast<char*>(&index), sizeof(index)) != sizeof(index))
+				throw std::runtime_error(FILE_LINE + " index_file_ write error");
+			if (index_file_.write(reinterpret_cast<char*>(&file_pos), sizeof(int64_t)) != sizeof(int64_t))
+				throw std::runtime_error(FILE_LINE + " index_file_ write error");
+			if(!index_file_.sync())
+				throw std::runtime_error(FILE_LINE + " index_file_ sync error");
 			last_log_index_ = index;
-			check_apply(index_file_.good());
-			return true;
 		}
 
-		bool get_log_entries(int64_t &index,
+		void get_entries(int64_t &index,
 			std::size_t &count,
-			std::list<log_entry> &log_entries,
-			std::unique_lock<std::mutex> &lock)
+			std::list<log_entry> &log_entries)
 		{
-			std::lock_guard<std::mutex> lock_guard(mtx_);
-			lock.unlock();
+			xutil::guard g([this] {data_file_.seek(0, xutil::file_stream::END); });
 			int64_t data_file_offset = 0;
-			check_apply(get_data_file_offset(index, data_file_offset));
-			data_file_.seekg(data_file_offset, std::ios::beg);
-			check_apply(data_file_.good());
+			if(!get_data_file_offset(index, data_file_offset))
+				throw std::out_of_range(FILE_LINE + "get_entries index invalid:" + std::to_string(index));
+			if(!data_file_.seek(data_file_offset, xutil::file_stream::BEGIN))
+				throw std::out_of_range(FILE_LINE + "seek file error,offset:" + std::to_string(data_file_offset));
 			do
 			{
 				uint32_t len;
-				data_file_.read((char*)&len, sizeof(uint32_t));
-				if (!data_file_.good())
-				{
-					bool ret = data_file_.eof();
-					data_file_.clear(data_file_.goodbit);
-					data_file_.seekp(0, std::ios::end);
-					return ret;
-				}
+				if (data_file_.read((char*)&len, sizeof(uint32_t)) != sizeof(uint32_t))
+					return;
 				std::string buffer;
 				buffer.resize(len);
-				data_file_.read((char*)buffer.data(), len);
-				check_apply(data_file_.good());
+				if(data_file_.read((char*)buffer.data(), len) != len)
+					throw std::runtime_error(FILE_LINE + "data_file read error");
 				log_entry entry;
-				entry.from_string(buffer);
+				if(!entry.from_string(buffer))
+					throw std::runtime_error(FILE_LINE + "entry decode error");
 				log_entries.emplace_back(std::move(entry));
 				++index;
 				--count;
 			} while (count > 0);
-			data_file_.seekp(0, std::ios::end);
-			return true;
 		}
 
-		bool get_entry(int64_t index, log_entry &entry)
+		log_entry get_entry(int64_t index)
 		{
-			std::lock_guard<std::mutex> lock_guard(mtx_);
+			xutil::guard g([this] {data_file_.seek(0, xutil::file_stream::END); });
 			int64_t data_file_offset = 0;
-			check_apply(get_data_file_offset(index, data_file_offset));
-			data_file_.seekg(data_file_offset, std::ios::beg);
-			check_apply(data_file_.good());
+			if (!get_data_file_offset(index, data_file_offset))
+				throw std::out_of_range(FILE_LINE + "get_entry index invalid:"+std::to_string(index));
+			if (!data_file_.seek(data_file_offset, xutil::file_stream::BEGIN))
+				throw std::out_of_range(FILE_LINE + "seek file error,offset:"+ std::to_string(data_file_offset));
 			uint32_t len;
-			data_file_.read((char*)&len, sizeof(uint32_t));
-			check_apply(data_file_.good());
+			if (data_file_.read((char*)&len, sizeof(uint32_t)) < 0)
+				throw std::runtime_error(FILE_LINE + "data_file read error");
 			std::string buffer;
 			buffer.resize(len);
-			data_file_.read((char*)buffer.data(), len);
-			check_apply(data_file_.good());
-			entry.from_string(buffer);
-			data_file_.seekp(0, std::ios::end);
-			return true;
+			if (data_file_.read((char*)buffer.data(), len) < 0)
+				throw std::runtime_error(FILE_LINE + "data_file read error");
+			log_entry entry;
+			if (entry.from_string(buffer))
+				throw std::runtime_error(FILE_LINE + "entry decode error");
+			return std::move(entry);
 		}
-		std::size_t size()
+		int64_t size()
 		{
-			data_file_.seekp(0, std::ios::end);
-			return data_file_.tellp();
+			return data_file_.tell();
 		}
 		//rm file from disk.
 		bool rm()
 		{
-			std::lock_guard<std::mutex> lock_guard(mtx_);
 			return rm_on_lock();
 		}
-		bool truncate_suffix(int64_t index)
+		void truncate_suffix(int64_t index)
 		{
-			std::lock_guard<std::mutex> lock_guard(mtx_);
 			int64_t offset = 0;
-			check_apply(get_data_file_offset(index, offset));
-			data_file_.close();
-			index_file_.close();
-			if (!functors::fs::truncate_suffix()(get_data_file_path(), offset))
-			{
-				//todo log error ;
-				open_no_lock();
-				return false;
-			}
-			offset = get_index_file_offset(index);
-			last_log_index_ = -1;
-			if (!functors::fs::truncate_suffix()(get_index_file_path(), offset))
-			{
-				//todo log error ;
-				open_no_lock();
-				return false;
-			}
-			return open_no_lock();
+
+			if (!get_data_file_offset(index, offset))
+				throw std::out_of_range(FILE_LINE + "index out_of_range:" + std::to_string(index));
+			if (!data_file_.trunc(offset))
+				throw std::runtime_error(FILE_LINE +"data_file trunc error");
+			if(!index_file_.trunc(get_index_file_offset(index)))
+				throw std::runtime_error(FILE_LINE +"index_file_ trunc error");
 		}
 		bool truncate_prefix(int64_t index)
 		{
-			std::lock_guard<std::mutex> lock_guard(mtx_);
 			int64_t offset = 0;
 			if (!get_data_file_offset(index + 1, offset))
 				return false;
@@ -180,28 +150,21 @@ namespace detail
 		{
 			if (last_log_index_ == -1)
 			{
-				std::lock_guard<std::mutex> lock(mtx_);
-				index_file_.seekg(-(int32_t)(sizeof(int64_t) * 2), std::ios::end);
-				index_file_.read((char*)&last_log_index_, sizeof(last_log_index_));
-				index_file_.seekp(0, std::ios::end);
-				if (index_file_.gcount() != sizeof(last_log_index_) || !index_file_.good())
-				{
-					index_file_.clear(index_file_.goodbit);
-					last_log_index_ = -1;
+				xutil::guard g([this] {index_file_.seek(0, xutil::file_stream::BEGIN); });
+				if (!index_file_.seek(-(int32_t)(sizeof(int64_t) * 2), xutil::file_stream::END))
 					return 0;
-				}
+				if (index_file_.read((char*)&last_log_index_, sizeof(last_log_index_)) < 0)
+					return 0;
 			}
 			return last_log_index_;
 		}
 		int64_t get_log_start()
 		{
-			std::lock_guard<std::mutex> lock(mtx_);
 			return get_log_start_no_lock();
 		}
 		bool is_open()
 		{
-			std::lock_guard<std::mutex> lock(mtx_);
-			return data_file_.is_open() && index_file_.is_open();
+			return data_file_ && index_file_;
 		}
 	private:
 		void move_reset(file &&self)
@@ -238,29 +201,28 @@ namespace detail
 			auto offset = get_index_file_offset(index);
 			if (offset == 0)
 				return true;
-			index_file_.seekg(offset, std::ios::beg);
+			xutil::guard g([this] {index_file_.seek(0, xutil::file_stream::END);});
+			if (!index_file_.seek(offset, xutil::file_stream::BEGIN))
+				return false;
 			int64_t index_buffer_;
-			index_file_.read((char*)&index_buffer_, sizeof(int64_t));
-			if (!index_file_.good())
+			if (index_file_.read((char*)&index_buffer_, sizeof(int64_t)) < 0)
 			{
-				index_file_.clear(index_file_.goodbit);
 				return false;
 			}
 			if (index_buffer_ != index)
-				//todo log error.
+			{
+				throw std::runtime_error("index file's data error");
+			}
+			if (index_file_.read((char*)&data_file_offset, sizeof(int64_t)) < 0)
 				return false;
-			index_file_.read((char*)&data_file_offset, sizeof(int64_t));
-			if (!index_file_.good())
-				return false;
-			index_file_.seekp(0, std::ios::end);
 			return true;
 		}
 		bool rm_on_lock()
 		{
 			data_file_.close();
 			index_file_.close();
-			if (!functors::fs::rm()(get_data_file_path()) ||
-				!functors::fs::rm()(get_index_file_path()))
+			if (!xutil::vfs::unlink()(get_data_file_path()) ||
+				!xutil::vfs::unlink()(get_index_file_path()))
 				return false;
 			return true;
 		}
@@ -268,15 +230,13 @@ namespace detail
 		{
 			if (log_index_start_ == -1)
 			{
-				index_file_.seekg(0, std::ios::beg);
+				index_file_.seek(0, xutil::file_stream::BEGIN);
 				char buffer[sizeof(int64_t)] = { 0 };
-				index_file_.read(buffer, sizeof(buffer));
-				index_file_.seekp(0, std::ios::end);
-				if (index_file_.gcount() != sizeof(buffer))
-				{
-					index_file_.clear(index_file_.goodbit);
+				auto bytes = index_file_.read(buffer, sizeof(buffer));
+				index_file_.seek(0, xutil::file_stream::END);
+				if (bytes  != sizeof(buffer))
 					return 0;
-				}
+
 				log_index_start_ = *(int64_t*)(buffer);
 			}
 			return log_index_start_;
@@ -288,22 +248,21 @@ namespace detail
 				std::ios::binary |
 				std::ios::app |
 				std::ios::ate;
-			if (data_file_.is_open())
+			if (data_file_)
 				data_file_.close();
-			if (index_file_.is_open())
+			if (index_file_)
 				index_file_.close();
 			data_file_.open(get_data_file_path().c_str(), mode);
 			index_file_.open(get_index_file_path().c_str(), mode);
-			if (!data_file_.good() || !index_file_.good())
+			if (!data_file_|| !index_file_)
 				return false;
 			return true;
 		}
 
-		std::mutex mtx_;
 		int64_t last_log_index_ = -1;
 		int64_t log_index_start_ = -1;
-		std::fstream data_file_;
-		std::fstream index_file_;
+		xutil::file_stream data_file_;
+		xutil::file_stream index_file_;
 		std::string filepath_;
 	};
 
@@ -356,33 +315,33 @@ namespace detail
 			{
 				current_file_.open(path_ + std::to_string(entry.index_) + ".log");
 			}
-			check_apply(current_file_.write(last_index_, std::move(buffer)));
+			current_file_.write(last_index_, std::move(buffer));
 			check_current_file_size();
 			return true;
 		}
-		bool get_log_entry(int64_t index, log_entry &entry)
+		log_entry get_entry(int64_t index)
 		{
 			std::lock_guard<std::mutex> lock(mtx_);
+			log_entry entry;
 			if (get_entry_from_cache(entry, index))
-				return true;
+				return std::move(entry);
 			if (current_file_.is_open() && 
 				current_file_.get_log_start() <= index &&
 				index <= current_file_.get_last_log_index())
 			{
-				return current_file_.get_entry(index, entry);
+				return current_file_.get_entry(index);
 			}
 			for (auto itr = logfiles_.begin(); itr != logfiles_.end(); ++itr)
 			{
 				auto &f = itr->second;
-				if (f.get_log_start() <= index &&
-					index <= f.get_last_log_index())
-					return f.get_entry(index, entry);
+				if (f.get_log_start() <= index && index <= f.get_last_log_index())
+					return f.get_entry(index);
 			}
-			return true;
+			return {};
 		}
-		std::list<log_entry> get_log_entries(int64_t index, std::size_t count = 10)
+		std::list<log_entry> get_entries(int64_t index, std::size_t count = 10)
 		{
-			std::unique_lock<std::mutex> lock(mtx_);
+			std::lock_guard<std::mutex> lock(mtx_);
 			std::list<log_entry> log_entries;
 			get_entries_from_cache(log_entries, index, count);
 			if (count == 0)
@@ -395,11 +354,9 @@ namespace detail
 					return std::move(log_entries);
 				if (f.get_log_start() <= index && index <= f.get_last_log_index())
 				{
-					if (!f.get_log_entries(index, count, log_entries, lock))
-						return std::move(log_entries);
+					f.get_entries(index, count, log_entries);
 					if (count == 0)
 						return std::move(log_entries);
-					lock.lock();
 				}
 			}
 			get_entries_from_cache(log_entries, index, count);
@@ -409,9 +366,7 @@ namespace detail
 				index <= current_file_.get_last_log_index() &&
 				current_file_.get_log_start() <= index)
 			{
-				if (!current_file_.get_log_entries(index, count, log_entries, lock))
-					return std::move(log_entries);
-				lock.lock();
+				current_file_.get_entries(index, count, log_entries);
 			}
 			return std::move(log_entries);
 		}
@@ -433,8 +388,7 @@ namespace detail
 					itr = logfiles_.erase(itr);
 					continue;
 				}
-				else if (itr->second.get_log_start() <= index &&
-					index < itr->second.get_last_log_index())
+				else if (index < itr->second.get_last_log_index() && itr->second.get_log_start() <= index)
 				{
 					itr->second.truncate_prefix(index);
 					auto f = std::move(itr->second);
@@ -589,7 +543,7 @@ namespace detail
 		std::list<log_entry> log_entries_cache_;
 		std::size_t log_entries_cache_size_ = 0;
 		std::size_t max_cache_size_ = 1;
-		std::size_t max_file_size_ = 1024*1024;
+		int64_t max_file_size_ = 1024*1024;
 		int64_t last_index_ = 0;
 		std::string path_;
 		file current_file_;

@@ -54,14 +54,6 @@ namespace fs
 		}
 	};
 
-	struct rm 
-	{
-		bool operator()(const std::string &filepath)
-		{
-			return !!DeleteFile(filepath.c_str());
-		}
-	};
-
 	struct truncate_suffix
 	{
 		bool operator()(const std::string &filepath_, int64_t offset)
@@ -123,14 +115,14 @@ namespace fs
 			if (!old_file.good())
 			{
 				//todo log error;
-				rm()((filepath + ".tmp"));
+				xutil::vfs::unlink()((filepath + ".tmp"));
 				return false;
 			}
 			old_file.seekg(offset, std::ios::beg);
 			if (!tmp_file.good())
 			{
 				//todo log error;
-				rm()((filepath + ".tmp"));
+				xutil::vfs::unlink()((filepath + ".tmp"));
 				return false;
 			}
 			const int buffer_len = 16 * 1024;
@@ -144,10 +136,10 @@ namespace fs
 			} while (true);
 			old_file.close();
 			tmp_file.close();
-			if (!rm()(filepath))
+			if (!xutil::vfs::unlink()(filepath))
 			{
 				//todo log error;
-				rm()((filepath + ".tmp"));
+				xutil::vfs::unlink()((filepath + ".tmp"));
 				return false;
 			}
 			return rename()((filepath + ".tmp"),filepath);

@@ -18,11 +18,16 @@
 #include <random>
 
 //deps
-#include "../../../../xsimple_rpc/include/xsimple_rpc.hpp"
 
+#include "../../../../xsimple_rpc/include/xsimple_rpc.hpp"
+#include "../../../../xutil/include/vfs.hpp"
+#include "../../../../xutil/include/file_stream.hpp"
+#include "../../../../xutil/include/guard.hpp"
 #ifdef _MSC_VER
 #include<windows.h> 
 #endif
+
+#define FILE_LINE (std::string("[ FILE:") + __FILE__ + " LINE: " + std::to_string(__LINE__)+" ] ")
 
 #include "macros.hpp"
 #include "endec.hpp"

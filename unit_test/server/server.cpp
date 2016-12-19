@@ -107,7 +107,7 @@ private:
 		});
 		rpc_server_.regist("get", [this](const std::string &key) ->std::pair<bool, std::string>
 		{
-			xnet::guard do_log([&] {std::cout << key << std::endl; });
+			xutil::guard do_log([&] {std::cout << key << std::endl; });
 
 			if (!raft_.check_leader())
 				return{ false, "no leader" };

@@ -96,7 +96,8 @@ namespace xraft
 			void discard()
 			{
 				close();
-				functors::fs::rm()(filepath_);
+				if (!xutil::vfs::unlink()(filepath_))
+					throw std::runtime_error("unlink file error: "+ filepath_);
 			}
 			std::size_t get_bytes_writted()
 			{
@@ -153,6 +154,7 @@ namespace xraft
 			{
 				snapshot_head head;
 				auto commit_index = get_last_commit_index_();
+
 				head.last_included_index_ = commit_index;
 				head.last_included_term_ = get_log_entry_term_(commit_index);
 				snapshot_writer writer;
