@@ -38,14 +38,14 @@ namespace detail
 				throw std::runtime_error(FILE_LINE + " data_file_ write error");
 			if(data_file_.write(data.data(), data.size()) != data.size())
 				throw std::runtime_error(FILE_LINE + " data_file_ write error");
-			if(!data_file_.sync())
-				throw std::runtime_error(FILE_LINE + " data_file_ sync error");
+			//if(!data_file_.sync())
+			//	throw std::runtime_error(FILE_LINE + " data_file_ sync error");
 			if(index_file_.write(reinterpret_cast<char*>(&index), sizeof(index)) != sizeof(index))
 				throw std::runtime_error(FILE_LINE + " index_file_ write error");
 			if (index_file_.write(reinterpret_cast<char*>(&file_pos), sizeof(int64_t)) != sizeof(int64_t))
 				throw std::runtime_error(FILE_LINE + " index_file_ write error");
-			if(!index_file_.sync())
-				throw std::runtime_error(FILE_LINE + " index_file_ sync error");
+			//if(!index_file_.sync())
+				//throw std::runtime_error(FILE_LINE + " index_file_ sync error");
 			last_log_index_ = index;
 		}
 
@@ -93,7 +93,7 @@ namespace detail
 			if (data_file_.read((char*)buffer.data(), len) < 0)
 				throw std::runtime_error(FILE_LINE + "data_file read error");
 			log_entry entry;
-			if (entry.from_string(buffer))
+			if (!entry.from_string(buffer))
 				throw std::runtime_error(FILE_LINE + "entry decode error");
 			return std::move(entry);
 		}
@@ -101,7 +101,6 @@ namespace detail
 		{
 			return data_file_.tell();
 		}
-		//rm file from disk.
 		bool rm()
 		{
 			return rm_on_lock();
@@ -202,16 +201,18 @@ namespace detail
 			if (offset == 0)
 				return true;
 			xutil::guard g([this] {index_file_.seek(0, xutil::file_stream::END);});
+			if (!index_file_)
+				throw std::runtime_error(FILE_LINE+ "file not open");
 			if (!index_file_.seek(offset, xutil::file_stream::BEGIN))
 				return false;
 			int64_t index_buffer_;
-			if (index_file_.read((char*)&index_buffer_, sizeof(int64_t)) < 0)
+			if (index_file_.read((char*)&index_buffer_, sizeof(int64_t)) != sizeof(int64_t))
 			{
 				return false;
 			}
 			if (index_buffer_ != index)
 			{
-				throw std::runtime_error("index file's data error");
+				throw std::runtime_error(FILE_LINE+ " index file's data error");
 			}
 			if (index_file_.read((char*)&data_file_offset, sizeof(int64_t)) < 0)
 				return false;
@@ -243,15 +244,14 @@ namespace detail
 		}
 		bool open_no_lock()
 		{
-			int mode = std::ios::out |
-				std::ios::in |
-				std::ios::binary |
-				std::ios::app |
-				std::ios::ate;
 			if (data_file_)
 				data_file_.close();
 			if (index_file_)
 				index_file_.close();
+			int mode = 
+				xutil::file_stream::OPEN_BINARY | 
+				xutil::file_stream::OPEN_RDWR | 
+				xutil::file_stream::OPEN_CREATE;
 			data_file_.open(get_data_file_path().c_str(), mode);
 			index_file_.open(get_index_file_path().c_str(), mode);
 			if (!data_file_|| !index_file_)

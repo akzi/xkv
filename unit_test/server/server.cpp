@@ -192,7 +192,9 @@ private:
 
 int main(int args, char **argc)
 {
-	if (args == 1 || argc[1] == std::string("9001"))
+	int port;
+	std::cin >> port;
+	if (9001 == port)
 	{
 		server::raft_config config;
 		config.append_log_timeout_ = 10000;
@@ -206,9 +208,13 @@ int main(int args, char **argc)
 
 		server _server;
 		_server.init(config, "127.0.0.1", 9001);
-		getchar();
+		do 
+		{
+			if(getchar() == 'q')
+				break;;
+		} while (true);
 	}
-	else if (argc[1] == std::string("9002"))
+	else 
 	{
 		server::raft_config config;
 		config.append_log_timeout_ = 10000;
@@ -222,7 +228,11 @@ int main(int args, char **argc)
 
 		server _server;
 		_server.init(config, "127.0.0.1", 9002);
-		getchar();
+		do
+		{
+			if (getchar() == 'q')
+				break;;
+		} while (true);
 	}
 
 }

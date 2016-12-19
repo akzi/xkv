@@ -71,8 +71,31 @@ XTEST_SUITE(filelog)
 		}
 	}
 #endif 
-	
-	
+	XUNIT_TEST(write_get_log_entries)
+	{
+		filelog flog;
+		xassert(flog.init("data/write_get_log_entries/"));
+		log_entry entry;
+		entry.log_data_ = "hello world";
+		entry.term_ = 1000;
+		entry.type_ = log_entry::type::e_append_log;
+		int64_t index;
+		for (size_t i = 1; i <= 200; i++)
+		{
+			xassert(flog.write(std::move(entry), index));
+			auto entries = flog.get_entries(i, 300);
+			std::cout << entries.size() << std::endl;;
+			entry.index_ = 0;
+		}
+
+		auto entries = flog.get_entries(1, 300);
+		int i = 1;
+		for (auto &itr : entries)
+		{
+			xassert(itr.index_ == i);
+			i++;
+		}
+	}
 #if 0
 	XUNIT_TEST(truncate_suffix)
 	{
@@ -101,29 +124,7 @@ XTEST_SUITE(filelog)
 		index = flog.get_last_log_entry_term();
 		index = flog.get_log_start_index();
 	}
-	XUNIT_TEST(write_get_log_entries)
-	{
-		filelog flog;
-		xassert(flog.init("data/write_get_log_entries/"));
-		log_entry entry;
-		entry.log_data_ = "hello world";
-		entry.term_ = 1000;
-		entry.type_ = log_entry::type::e_append_log;
-		int64_t index;
-		for (size_t i = 0; i < 200; i++)
-		{
-			xassert(flog.write(std::move(entry), index));
-			auto entries = flog.get_log_entries(index, 300);
-			xassert(entries.size() == 1);
-		}
-
-		auto entries = flog.get_log_entries(1, 300);
-		int i = 1;
-		for (auto &itr : entries)
-		{
-			xassert(itr.index_ == i);
-			i++;
-		}
+}
 	}
 	XUNIT_TEST(get_log_entries)
 	{

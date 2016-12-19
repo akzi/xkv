@@ -99,7 +99,9 @@ private:
 
 int main(int args, char **argc)
 {
-	client _client("127.0.0.1",std::strtol(argc[1], 0, 10));
+	int port;
+	std::cin >> port;
+	client _client("127.0.0.1",port);
 	if (!_client.connect())
 		std::exit(1);
 	do
