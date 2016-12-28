@@ -173,8 +173,8 @@ namespace detail
 			if (!reader.read_sanpshot_head(head))
 				throw std::runtime_error("read_sanpshot_head failed");
 
-			std::ifstream &file = reader.get_snapshot_stream();
-			file.seekg(0, std::ios::beg);
+			auto &file = reader.get_snapshot_stream();
+			file.seek(0, file.BEGIN);
 			do
 			{
 				if (try_execute_cmd())
@@ -184,12 +184,19 @@ namespace detail
 				request.leader_id_ = raft_id_;
 				request.last_included_term_ = head.last_included_term_;
 				request.last_snapshot_index_ = head.last_included_index_;
-				request.offset_ = file.tellg();
+
+				request.offset_ = file.tell();
+				request.data_.resize(1024 * 1024);
+
 				std::cout << "request.offset_: " << request.offset_ << std::endl;
-				request.data_.resize(1024*1024);
-				file.read((char*)request.data_.data(), request.data_.size());
-				request.data_.resize(file.gcount());
-				request.done_ = file.eof();
+
+
+				auto bytes = file.read((char*)request.data_.data(), request.data_.size());
+				if (bytes == -1)
+					bytes = 0;
+				request.data_.resize(bytes);
+				request.done_ = bytes != request.data_.size();
+
 				try
 				{
 					struct RPC
@@ -207,8 +214,7 @@ namespace detail
 					else if (resp.bytes_stored_ != 
 							request.offset_ + request.data_.size())
 					{
-						file.clear(file.goodbit);
-						file.seekg(resp.bytes_stored_, std::ios::beg);
+						file.seek(resp.bytes_stored_ + sizeof(snapshot_head), xutil::file_stream::BEGIN);
 					}
 					else if (request.done_)
 					{
@@ -257,7 +263,7 @@ namespace detail
 			case cmd_t::e_exit:
 				do_exist();
 			default:
-				//todo log error
+
 				break;
 			}
 			return true;

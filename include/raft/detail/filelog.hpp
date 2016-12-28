@@ -141,8 +141,8 @@ namespace detail
 			filepath_ = filepath_.substr(0, beg);
 			filepath_ += std::to_string(index + 1);
 			filepath_ += ".log";
-			functors::fs::rename()(old_data_file, get_data_file_path());
-			functors::fs::rename()(old_index_file, get_index_file_path());
+			xutil::vfs::rename()(old_data_file, get_data_file_path());
+			xutil::vfs::rename()(old_index_file, get_index_file_path());
 			return open_no_lock();
 		}
 		int64_t get_last_log_index()
@@ -275,7 +275,8 @@ namespace detail
 		bool init(const std::string &path)
 		{
 			path_ = path;
-			check_apply(functors::fs::mkdir()(path_));
+			if(!xutil::vfs::mkdir()(path))
+				throw std::runtime_error(FILE_LINE + " mkdir error, "+ path);
 			auto files = functors::fs::ls_files()(path_);
 			if (files.empty())
 				return true;
@@ -284,7 +285,8 @@ namespace detail
 				if (itr.find(".log") != std::string::npos)
 				{
 					file f;
-					check_apply(f.open(itr));
+					if (!f.open(itr))
+						throw std::runtime_error(FILE_LINE + " file open error, " + itr);
 					logfiles_.emplace(f.get_log_start(), std::move(f));
 				}
 			}
@@ -524,7 +526,8 @@ namespace detail
 				logfiles_.emplace(current_file_.get_log_start(),
 					std::move(current_file_));
 				std::string filepath = path_ + std::to_string(last_index_ + 1) + ".log";
-				check_apply(current_file_.open(filepath));
+				if(!current_file_.open(filepath))
+					throw std::runtime_error(FILE_LINE + " file open error, " + filepath);
 				check_make_snapshot_trigger();
 			}
 			return true;

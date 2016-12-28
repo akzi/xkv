@@ -10,8 +10,8 @@ namespace xraft
 		using raft_config = detail::raft_config;
 		using append_log_callback = std::function<void(bool, int64_t)>;
 		using commit_entry_callback = std::function<void(std::string &&, int64_t)>;
-		using install_snapshot_callback = std::function<void(std::ifstream &)>;
-		using build_snapshot_callback = std::function<bool(const std::function<bool(const std::string &)>&, int64_t)>;
+		using install_snapshot_callback = std::function<void(xutil::file_stream&)>;
+		using build_snapshot_callback = std::function<void(const std::function<bool(const std::string &)>&, int64_t)>;
 		enum state
 		{
 			e_follower,
@@ -81,11 +81,7 @@ namespace xraft
 			int64_t committed_index;
 			int64_t last_snapshot_term;
 			int64_t last_snapshot_index;
-			if (!metadata_.init(metadata_base_path_))
-			{
-				std::cout << "init metadata failed" << std::endl;
-				std::exit(0);
-			}
+			metadata_.init(metadata_base_path_);
 			metadata_.get("last_applied_index", last_applied_index_);
 			metadata_.get("voted_for", voted_for_);
 			if (metadata_.get("current_term", current_term))
@@ -652,9 +648,9 @@ namespace xraft
 				}
 			}
 		}
-		bool make_snapshot_callback(const std::function<bool(const std::string &)> &writer, int64_t index)
+		void make_snapshot_callback(const std::function<bool(const std::string &)> &writer, int64_t index)
 		{
-			return build_snapshot_callback_(writer, index);
+			build_snapshot_callback_(writer, index);
 		}
 		void make_snapshot_done_callback(int64_t index)
 		{
@@ -705,60 +701,34 @@ namespace xraft
 		}
 		void set_voted_for(const std::string &raft_id)
 		{
-			TRACE;
 			voted_for_ = raft_id;
-			if (!metadata_.set("voted_for", voted_for_))
-			{
-				//todo log error;
-				throw std::runtime_error("metadata::set [voted_for] failed");
-			}
+			metadata_.set("voted_for", voted_for_);
 		}
 		void set_committed_index(int64_t index)
 		{
 			committed_index_ = index;
-			if (!metadata_.set("committed_index", committed_index_.load()))
-			{
-				//todo log error;
-				throw std::runtime_error("metadata::set [committed_index] failed");
-			}
+			metadata_.set("committed_index", committed_index_.load());
 		}
 		void set_last_applied(int64_t index)
 		{
 			last_applied_index_ = index;
-			if (!metadata_.set("last_applied_index", index))
-			{
-				//todo log error;
-				throw std::runtime_error("metadata::set [committed_index] failed");
-			}
+			metadata_.set("last_applied_index", index);
 		}
 		void set_term(int64_t term)
 		{
-			TRACE;
 			std::cout << "term:" << term << std::endl;
 			current_term_ = term;
-			if (!metadata_.set("current_term", term))
-			{
-				//todo log error;
-				throw std::runtime_error("metadata::set [current_term] failed");
-			}
+			metadata_.set("current_term", term);
 		}
 		void set_last_snapshot_index(int64_t index)
 		{
 			last_snapshot_index_ = index;
-			if (!metadata_.set("last_snapshot_index", index))
-			{
-				//todo log error;
-				throw std::runtime_error("metadata::set [last_snapshot_index] failed");
-			}
+			metadata_.set("last_snapshot_index", index);
 		}
 		void set_last_snapshot_term(int64_t term)
 		{
 			last_snapshot_term_ = term;
-			if (!metadata_.set("last_snapshot_term", term))
-			{
-				//todo log error;
-				throw std::runtime_error("metadata::set [last_snapshot_term] failed");
-			}
+			metadata_.set("last_snapshot_term", term);
 		}
 		detail::raft_config::raft_node myself_;
 		//rpc

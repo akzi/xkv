@@ -20,19 +20,19 @@ namespace xraft
 			bool open(const std::string &filepath)
 			{
 				filepath_ = filepath;
-				if (file_.is_open())
+				if (file_)
 					file_.close();
-				int mode = std::ios::in | std::ios::binary | std::ios::app;
-				file_.open(filepath_.c_str(), mode);
-				return file_.good();
+				int mode = 
+					xutil::file_stream::OPEN_BINARY | 
+					xutil::file_stream::OPEN_RDONLY;
+				return file_.open(filepath_.c_str(), mode);
 			}
 			bool read_sanpshot_head(snapshot_head &head)
 			{
 				std::string buffer;
 				buffer.resize(sizeof(head));
-				file_.seekg(0, std::ios::beg);
-				file_.read((char*)buffer.data(), buffer.size());
-				if (file_.gcount() != buffer.size())
+				file_.seek(0, xutil::file_stream::BEGIN);
+				if (file_.read((char*)buffer.data(), buffer.size()) != buffer.size())
 					return false;
 				unsigned char *ptr = (unsigned char*)buffer.data();
 				if (endec::get_uint32(ptr) != head.version_ || 
@@ -42,13 +42,13 @@ namespace xraft
 				head.last_included_term_ = (int64_t)endec::get_uint64(ptr);
 				return true;
 			}
-			std::ifstream &get_snapshot_stream()
+			xutil::file_stream &get_snapshot_stream()
 			{
 				return file_;
 			}
 		private:
 			std::string filepath_;
-			std::ifstream file_;
+			xutil::file_stream file_;
 		};
 		class snapshot_writer
 		{
@@ -57,23 +57,20 @@ namespace xraft
 
 			operator bool()
 			{
-				return file_.is_open();
+				return file_;
 			}
 			bool open(const std::string &filepath)
 			{
 				filepath_ = filepath;
-				assert(!file_.is_open());
-				int mode =
-					std::ios::out |
-					std::ios::binary |
-					std::ios::trunc;
-				file_.open(filepath_.c_str(), mode);
-				return file_.good();
+				if (file_)
+					file_.close();
+				int mode = xutil::file_stream::OPEN_TRUNC;
+				return file_.open(filepath_.c_str(), mode);;
 			}
 			void close()
 			{
-				if(file_.is_open())
-					file_.close();
+				if(file_)
+				file_.close();
 			}
 			bool write_sanpshot_head(const snapshot_head &head)
 			{
@@ -89,9 +86,7 @@ namespace xraft
 			}
 			bool write(const std::string &buffer)
 			{
-				file_.write(buffer.data(), buffer.size());
-				file_.flush();
-				return file_.good();
+				return file_.write(buffer.data(), buffer.size())== buffer.size();
 			}
 			void discard()
 			{
@@ -101,7 +96,7 @@ namespace xraft
 			}
 			std::size_t get_bytes_writted()
 			{
-				return file_.tellp();
+				return file_.tell();
 			}
 			std::string get_snapshot_filepath()
 			{
@@ -109,13 +104,13 @@ namespace xraft
 			}
 		private:
 			std::string filepath_;
-			std::ofstream file_;
+			xutil::file_stream file_;
 		};
 		class snapshot_builder
 		{
 		public:
 			using get_last_commit_index_handle = std::function<int64_t()>;
-			using build_snapshot_callback = std::function<bool(const std::function<bool(const std::string &)>&, int64_t)>;
+			using build_snapshot_callback = std::function<void(const std::function<bool(const std::string &)>&, int64_t)>;
 			using build_snapshot_done_callback = std::function<void(int64_t)>;
 			using get_log_entry_term_handle = std::function<int64_t(int64_t)>;
 
@@ -162,17 +157,20 @@ namespace xraft
 				if (!writer.open(filepath))
 					throw std::runtime_error("open "+filepath+ "error");
 				writer.write_sanpshot_head(head);
-				auto result = build_snapshot_([&writer](const std::string &buffer)
+				try
 				{
-					writer.write(buffer);
-					return true;
-				}, commit_index);
-				if (result == false)
+					build_snapshot_([&writer](const std::string &buffer){
+							return writer.write(buffer);
+						},commit_index);
+				}
+				catch (const std::exception& e)
 				{
-					std::cout << "build_snapshot_ failed" << std::endl;
+					std::cout << e.what() << std::endl;;
 					writer.discard();
+					return;
 				}
 				writer.close();
+
 				commit_index = get_last_commit_index_();
 				if (head.last_included_index_ > commit_index || 
 					head.last_included_term_ > get_log_entry_term_(commit_index))
@@ -180,7 +178,6 @@ namespace xraft
 					std::cout << "commit_index " << commit_index << std::endl;;
 				}
 				build_snapshot_done_(commit_index);
-				//todo log snapshot done
 			}
 			std::string snapshot_base_path_;
 			get_log_entry_term_handle get_log_entry_term_;

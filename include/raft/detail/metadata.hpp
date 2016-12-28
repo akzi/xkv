@@ -46,43 +46,48 @@ namespace detail
 				xutil::vfs::unlink()(itr);
 			}
 		}
-		bool init(const std::string &path)
+		void init(const std::string &path)
 		{
 			if (!functors::fs::mkdir()(path))
-				return false;
+				throw std::runtime_error(FILE_LINE + "mkdir error"+ path);
 			path_ = path;
-			return load();
+			load();
 		}
-		bool set(const std::string &key, const std::string &value)
+		void set(const std::string &key, const std::string &value)
 		{
 			std::lock_guard<mutex> lock(mtx_);
-			if (!write_log(build_log(key, value, op::e_set)))
-				return false;
+			write_log(build_log(key, value, op::e_set));
 			string_map_[key] = value;
-			return true;
 		}
-		bool set(const std::string &key, int64_t value)
+		void set(const std::string &key, int64_t value)
 		{
 			std::lock_guard<mutex> lock(mtx_);
-			if (!write_log(build_log(key, value, op::e_set)))
-				return false;
+			write_log(build_log(key, value, op::e_set));
 			integral_map_[key] = value;
-			return true;
 		}
 		bool del(const std::string &key)
 		{
 			std::lock_guard<mutex> lock(mtx_);
-			if (!write_log(build_log(key, op::e_del, type::e_string)))
-				return false;
-			if (!write_log(build_log(key, op::e_del, type::e_integral)))
-				return false;
+
+			bool found = false;
 			auto itr = string_map_.find(key);
 			if (itr != string_map_.end())
+			{
+				found = true;
 				string_map_.erase(itr);
+			}
 			auto itr2 = integral_map_.find(key);
 			if (itr2 != integral_map_.end())
+			{
+				found = true;
 				integral_map_.erase(itr2);
-			return true;
+			}
+			if (found == true)
+			{
+				write_log(build_log(key, op::e_del, type::e_string));
+				write_log(build_log(key, op::e_del, type::e_integral));
+			}
+			return found;
 		}
 		bool get(const std::string &key, std::string &value)
 		{
@@ -102,23 +107,24 @@ namespace detail
 			value = itr->second;
 			return true;
 		}
-		bool write_snapshot(const std::function<bool(const std::string &)>& writer)
+		void write_snapshot(const std::function<bool(const std::string &)>& writer)
 		{
 			std::lock_guard<mutex> lock(mtx_);
 			for (auto &itr : string_map_)
 			{
 				std::string log = build_log(itr.first, itr.second, op::e_set);
+				
 				uint8_t buf[sizeof(uint32_t)];
 				uint8_t *ptr = buf;
 				endec::put_uint32(ptr, (uint32_t)log.size());
+
 				if (!writer(std::string((char*)buf, sizeof(buf))))
-					return false;
+					throw std::runtime_error(FILE_LINE + "write data error");
 				if (!writer(log))
-					return false;
+					throw std::runtime_error(FILE_LINE + "write data error");
 			}
-			return true;
 		}
-		void load_snapshot(std::ifstream &file)
+		void load_snapshot(xutil::file_stream &file)
 		{
 			load_fstream(file);
 		}
@@ -165,24 +171,27 @@ namespace detail
 			endec::put_string(ptr, key);
 			return std::move(buffer);
 		}
-		bool write_log(const std::string &data)
+		void write_log(const std::string &data)
 		{
 			char buffer[sizeof(uint32_t)];
 			uint8_t *ptr = (uint8_t *)buffer;
 			endec::put_uint32(ptr, (uint32_t)data.size());
-			log_.write((char*)(buffer), sizeof (buffer));
-			log_.write(data.data(), data.size());
-			log_.flush();
-			return log_.good() && try_make_snapshot();
+			
+			if (!log_.write((char*)(buffer), sizeof(buffer)))
+				throw std::runtime_error(FILE_LINE + "log_ writer error");
 
+			if (!log_.write(data.data(), data.size()))
+				throw std::runtime_error(FILE_LINE + "log_ writer error");
+
+			log_.sync();
+			try_make_snapshot();
 		}
-		bool load()
+		void load()
 		{
 			std::vector<std::string> files = functors::fs::ls_files()(path_);
 			if (files.empty())
-			{
-				return reopen_log();
-			}
+				reopen_log();
+
 			std::sort(files.begin(), files.end(),std::greater<std::string>());
 			for (auto &file: files)
 			{
@@ -195,18 +204,15 @@ namespace detail
 				std::string index = file.substr(beg, end - beg);
 				index_ = std::strtoull(index.c_str(), 0, 10);
 				if (errno == ERANGE || index_ == 0)
-				{
-					//todo log error
 					assert(false);
-				}
-				if (!load_file(get_snapshot_file()) || !load_file(get_log_file()))
-					return false;
-				return reopen_log(false);
+
+				load_file(get_snapshot_file());
+				load_file(get_log_file());
+				reopen_log(false);
 			}
-			return false;
 		}
 		template<typename T>
-		bool write(std::ofstream &file, T &map)
+		void write(xutil::file_stream &file, T &map)
 		{
 			for (auto &itr : map)
 			{
@@ -214,34 +220,37 @@ namespace detail
 				uint8_t buf[sizeof(uint32_t)];
 				uint8_t *ptr = buf;
 				endec::put_uint32(ptr, (uint32_t)log.size());
-				file.write((char*)buf,(int)sizeof(buf));
-				file.write(log.data(), log.size());
-				if (!file.good())
-					return false;
+
+				if (!file.write((char*)buf, (int)sizeof(buf)))
+					throw std::runtime_error(FILE_LINE + "file write failed");
+
+				if (!file.write(log.data(), log.size()))
+					throw std::runtime_error(FILE_LINE + "file write failed");
 			}
-			return true;
 		}
-		bool load_fstream(std::istream &file)
+		void load_fstream(xutil::file_stream &file)
 		{
 			std::string buffer;
 			uint8_t len_buf[sizeof(uint32_t)];
 			do
 			{
-				file.read((char*)len_buf, sizeof(len_buf));
-				if (file.eof())
-					return true;
+				auto bytes = file.read((char*)len_buf, sizeof(len_buf));
+				if (bytes == -1)
+					return;
+				else if (bytes != sizeof(len_buf))
+					throw std::runtime_error(FILE_LINE + "file read error");
+
 				auto *ptr = len_buf;
 				auto len = endec::get_uint32(ptr);
+				
 				buffer.resize(len);
-				file.read((char*)buffer.data(), len);
-				if (!file.good())
-				{
-					//log error
-					return false;
-				}
+				if (!file.read((char*)buffer.data(), len) != len)
+					throw std::runtime_error(FILE_LINE + "file read failed");
+
 				ptr = (uint8_t*)buffer.data();
 				char _op = (char)endec::get_uint8(ptr);
 				char _t = (char)endec::get_uint8(ptr);
+
 				if (type::e_string == static_cast<type>(_t))
 				{
 					if (static_cast<op>(_op) == op::e_set)
@@ -276,66 +285,45 @@ namespace detail
 				}
 			} while (true);
 		}
-		bool load_file(const std::string &filepath)
+
+		void load_file(const std::string &filepath)
 		{
-			std::ifstream file;
-			int mode = std::ios::binary | std::ios::in;
-			file.open(filepath.c_str(), mode);
-			if (!file.good())
-			{
-				//process error
-				return true;
-			}
-			auto ret = load_fstream(file);
+			xutil::file_stream file;
+			int mode = xutil::file_stream::open_mode::OPEN_BINARY | 
+				xutil::file_stream::open_mode::OPEN_RDONLY;
+			if (!file.open(filepath, mode))
+				throw std::runtime_error(FILE_LINE + "open file error");
+			load_fstream(file);
 			file.close();
-			return ret;
 		}
-		bool try_make_snapshot()
+		void try_make_snapshot()
 		{
-			if ((int)max_log_file_ > log_.tellp())
-				return true;
-			return make_snapshot();
+			if ((int)max_log_file_ > log_.tell())
+				return ;
+			make_snapshot();
 		}
-		bool make_snapshot()
+		void make_snapshot()
 		{
-			std::ofstream file;
-			int mode = std::ios::binary |
-				std::ios::trunc |
-				std::ios::out;
 			++index_;
-			file.open(get_snapshot_file().c_str(), mode);
-			if (!file.good())
-			{
-				//process error
-				return false;
-			}
-			if (!write(file, string_map_))
-			{
-				//process error
-				return false;
-			}
-			if (!write(file, integral_map_))
-			{
-				//process error
-				return false;
-			}
-			file.flush();
+
+			xutil::file_stream file;
+			int mode =
+				xutil::file_stream::open_mode::OPEN_TRUNC | 
+				xutil::file_stream::open_mode::OPEN_BINARY;
+			auto filepath = get_snapshot_file().c_str();
+			if (!file.open(filepath, mode))
+				throw std::runtime_error( FILE_LINE + "file open error,"+ filepath);
+
+			write(file, string_map_);
+			write(file, integral_map_);
+
+			file.sync();
 			file.close();
-			if (!reopen_log())
-			{
-				return false;
-			}
-			if (!touch_metadata_file())
-			{
-				return false;
-			}
-			if (!rm_old_files())
-			{
-				return false;
-			}
-			return true;
+			reopen_log();
+			make_metadata_file();
+			rm_old_files();
 		}
-		bool reopen_log(bool trunc = true)
+		void reopen_log(bool trunc = true)
 		{
 			log_.close();
 			int mode = std::ios::binary | std::ios::out ;
@@ -344,36 +332,31 @@ namespace detail
 			else
 				mode |= std::ios::app;
 
-			log_.open(get_log_file().c_str(), mode);
-			touch_metadata_file();
-			return log_.good();
+			auto filepath = get_log_file().c_str();
+			if (!log_.open(filepath, mode))
+				throw std::runtime_error(FILE_LINE + " open file erorr: " + filepath);
+			make_metadata_file();
 		}
-		bool touch_metadata_file()
+		void make_metadata_file()
 		{
-			std::ofstream file;
-			file.open(get_metadata_file().c_str());
-			auto is_ok = file.good();
-			file.close();
-			return is_ok;
+			xutil::file_stream file;
+			auto filepath = get_metadata_file().c_str();
+			if (!file.open(filepath))
+				throw std::runtime_error(FILE_LINE + "open file error, filepath: " + filepath);
 		}
-		bool rm_old_files()
+		void rm_old_files()
 		{
-			if (!xutil::vfs::unlink()(get_old_log_file()))
-			{
-				//todo log error
-				return false;
-			}
-			if (!xutil::vfs::unlink()(get_old_snapshot_file()))
-			{
-				//todo log error
-				return false;
-			}
-			if (!xutil::vfs::unlink()(get_old_metadata_file()))
-			{
-				//todo log error
-				return false;
-			}
-			return true;
+			auto filepath = get_old_log_file();
+			if (!xutil::vfs::unlink()(filepath))
+				throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+
+			filepath = get_old_snapshot_file();
+			if (!xutil::vfs::unlink()(filepath))
+				throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+
+			filepath = get_old_metadata_file();
+			if (!xutil::vfs::unlink()(filepath))
+				throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
 		}
 		std::string get_snapshot_file()
 		{
@@ -401,7 +384,7 @@ namespace detail
 		}
 		uint64_t index_ = 1;
 		std::size_t max_log_file_ = 10 * 1024 * 1024;
-		std::ofstream log_;
+		xutil::file_stream log_;
 		std::string path_;
 		mutex mtx_;
 		std::map<std::string, std::string> string_map_;
