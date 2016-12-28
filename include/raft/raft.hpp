@@ -190,10 +190,20 @@ namespace xraft
 			insert_callback(index, set_timeout(index), std::move(callback));
 			notify_peers();
 		}
+		void notify_noleader_error()
+		{
+			for (auto itr: append_log_callbacks_)
+			{
+				append_log_callback func;
+				commiter_.push([func = std::move(itr.second.callback_)]{ func(false, 0); });
+			}
+			append_log_callbacks_.clear();
+		}
 		append_entries_response 
 			handle_append_entries_request(append_entries_request & request)
 		{
 			std::lock_guard<std::mutex> locker(mtx_);
+
 			append_entries_response response;
 			response.success_ = false;
 			response.term_ = current_term_;
@@ -286,6 +296,8 @@ namespace xraft
 		}
 		vote_response handle_vote_request(const vote_request &request)
 		{
+			std::lock_guard<std::mutex> locker(mtx_);
+
 			vote_response response;
 			auto is_ok = false;
 			if (request.last_log_term_ > get_last_log_entry_term())
@@ -331,6 +343,8 @@ namespace xraft
 		install_snapshot_response
 			handle_install_snapshot (install_snapshot_request &request)
 		{
+			std::lock_guard<std::mutex> locker(mtx_);
+
 			install_snapshot_response response;
 			response.term_ = current_term_;
 			if (request.term_ < current_term_)
@@ -418,6 +432,7 @@ namespace xraft
 		void handle_new_term(int64_t new_term)
 		{
 			TRACE;
+			std::lock_guard<std::mutex> locker(mtx_);
 			step_down(new_term);
 		}
 		void step_down(int64_t new_term)
@@ -440,6 +455,7 @@ namespace xraft
 			if (state_ == state::e_leader)
 			{
 				sleep_peer_threads();
+				notify_noleader_error();
 			}
 			state_ = state::e_follower;
 			set_election_timer();
@@ -556,6 +572,7 @@ namespace xraft
 		void handle_vote_response(const vote_response &response)
 		{
 			TRACE;
+			std::lock_guard<std::mutex> locker(mtx_);
 			if (state_ != e_candidate)
 			{
 				return;

@@ -64,7 +64,10 @@ namespace xraft
 				filepath_ = filepath;
 				if (file_)
 					file_.close();
-				int mode = xutil::file_stream::OPEN_TRUNC;
+				int mode = 
+					xutil::file_stream::OPEN_TRUNC | 
+					xutil::file_stream::OPEN_CREATE | 
+					xutil::file_stream::OPEN_RDWR;
 				return file_.open(filepath_.c_str(), mode);;
 			}
 			void close()

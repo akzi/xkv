@@ -177,11 +177,12 @@ namespace detail
 			uint8_t *ptr = (uint8_t *)buffer;
 			endec::put_uint32(ptr, (uint32_t)data.size());
 			
-			if (!log_.write((char*)(buffer), sizeof(buffer)))
+			if (log_.write((char*)(buffer), sizeof(buffer)) != sizeof(buffer))
 				throw std::runtime_error(FILE_LINE + "log_ writer error");
 
-			if (!log_.write(data.data(), data.size()))
+			if (log_.write(data.data(), data.size()) != data.size())
 				throw std::runtime_error(FILE_LINE + "log_ writer error");
+
 			try_make_snapshot();
 		}
 		void load()
@@ -224,10 +225,10 @@ namespace detail
 				uint8_t *ptr = buf;
 				endec::put_uint32(ptr, (uint32_t)log.size());
 
-				if (!file.write((char*)buf, (int)sizeof(buf)))
+				if (file.write((char*)buf, sizeof(buf)) != sizeof(buf))
 					throw std::runtime_error(FILE_LINE + "file write failed");
 
-				if (!file.write(log.data(), log.size()))
+				if (file.write(log.data(), log.size()) != log.size())
 					throw std::runtime_error(FILE_LINE + "file write failed");
 			}
 		}
@@ -312,6 +313,7 @@ namespace detail
 
 			xutil::file_stream file;
 			int mode =
+				xutil::file_stream::open_mode::OPEN_CREATE|
 				xutil::file_stream::open_mode::OPEN_TRUNC | 
 				xutil::file_stream::open_mode::OPEN_BINARY;
 			auto filepath = get_snapshot_file();
@@ -324,7 +326,7 @@ namespace detail
 			file.sync();
 			file.close();
 			reopen_log();
-			make_metadata_file();
+			touch_metadata_file();
 			rm_old_files();
 		}
 		void reopen_log(bool trunc = true)
@@ -344,13 +346,13 @@ namespace detail
 			auto filepath = get_log_file();
 			if (!log_.open(filepath, mode))
 				throw std::runtime_error(FILE_LINE + " open file erorr: " + filepath);
-			make_metadata_file();
+			touch_metadata_file();
 		}
-		void make_metadata_file()
+		void touch_metadata_file()
 		{
 			xutil::file_stream file;
 			auto filepath = get_metadata_file();
-			if (!file.open(filepath))
+			if (!file.open(filepath, xutil::file_stream::open_mode::OPEN_CREATE))
 				throw std::runtime_error(FILE_LINE + "open file error, filepath: " + filepath);
 		}
 		void rm_old_files()
