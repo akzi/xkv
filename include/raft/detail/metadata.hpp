@@ -182,8 +182,6 @@ namespace detail
 
 			if (!log_.write(data.data(), data.size()))
 				throw std::runtime_error(FILE_LINE + "log_ writer error");
-
-			log_.sync();
 			try_make_snapshot();
 		}
 		void load()
@@ -205,8 +203,13 @@ namespace detail
 				index_ = std::strtoull(index.c_str(), 0, 10);
 				if (errno == ERANGE || index_ == 0)
 					assert(false);
-
-				load_file(get_snapshot_file());
+				try
+				{
+					load_file(get_snapshot_file());
+				}
+				catch (...)
+				{
+				}
 				load_file(get_log_file());
 				reopen_log(false);
 			}
@@ -235,7 +238,7 @@ namespace detail
 			do
 			{
 				auto bytes = file.read((char*)len_buf, sizeof(len_buf));
-				if (bytes == -1)
+				if (bytes == 0)
 					return;
 				else if (bytes != sizeof(len_buf))
 					throw std::runtime_error(FILE_LINE + "file read error");
@@ -244,7 +247,8 @@ namespace detail
 				auto len = endec::get_uint32(ptr);
 				
 				buffer.resize(len);
-				if (!file.read((char*)buffer.data(), len) != len)
+				bytes =  file.read((char*)buffer.data(), len);
+				if (bytes != len)
 					throw std::runtime_error(FILE_LINE + "file read failed");
 
 				ptr = (uint8_t*)buffer.data();
@@ -310,7 +314,7 @@ namespace detail
 			int mode =
 				xutil::file_stream::open_mode::OPEN_TRUNC | 
 				xutil::file_stream::open_mode::OPEN_BINARY;
-			auto filepath = get_snapshot_file().c_str();
+			auto filepath = get_snapshot_file();
 			if (!file.open(filepath, mode))
 				throw std::runtime_error( FILE_LINE + "file open error,"+ filepath);
 
@@ -326,13 +330,18 @@ namespace detail
 		void reopen_log(bool trunc = true)
 		{
 			log_.close();
-			int mode = std::ios::binary | std::ios::out ;
-			if (trunc)
-				mode |= std::ios::trunc;
-			else
-				mode |= std::ios::app;
+			int mode =
+				xutil::file_stream::open_mode::OPEN_BINARY |
+				xutil::file_stream::open_mode::OPEN_RDWR |
+				xutil::file_stream::open_mode::OPEN_CREATE;
 
-			auto filepath = get_log_file().c_str();
+			if (trunc)
+				mode = 
+					xutil::file_stream::open_mode::OPEN_CREATE|
+					xutil::file_stream::open_mode::OPEN_RDWR | 
+					xutil::file_stream::open_mode::OPEN_TRUNC;
+
+			auto filepath = get_log_file();
 			if (!log_.open(filepath, mode))
 				throw std::runtime_error(FILE_LINE + " open file erorr: " + filepath);
 			make_metadata_file();
@@ -340,7 +349,7 @@ namespace detail
 		void make_metadata_file()
 		{
 			xutil::file_stream file;
-			auto filepath = get_metadata_file().c_str();
+			auto filepath = get_metadata_file();
 			if (!file.open(filepath))
 				throw std::runtime_error(FILE_LINE + "open file error, filepath: " + filepath);
 		}

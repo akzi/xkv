@@ -252,7 +252,7 @@ namespace detail
 				do_connect();
 				break;
 			case cmd_t::e_sleep:
-				do_sleep();
+				do_sleep((uint64_t)3600 * 1000 * 24 * 365 *100);//100 years
 				break;
 			case cmd_t::e_election:
 				do_election();
@@ -271,13 +271,7 @@ namespace detail
 		void do_sleep(int64_t milliseconds = 0)
 		{
 			std::unique_lock<std::mutex> lock(mtx_);
-			if(!milliseconds)
-				cv_.wait(lock, [this] { 
-				return get_last_log_index_() != match_index_; });
-			else {
-				cv_.wait_for(lock, std::chrono::milliseconds(milliseconds), 
-					[this] { return get_last_log_index_() != match_index_; });
-			}
+			cv_.wait_for(lock, std::chrono::milliseconds(milliseconds));
 		}
 		
 		void update_heartbeat_time()

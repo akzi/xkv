@@ -17,10 +17,7 @@ public:
 		port_ = port;
 		init_raft();
 		init_rpc();
-		if (!metadata_.init(std::to_string(port) + "/"))
-		{
-			throw std::runtime_error("init metadata error");
-		}
+		metadata_.init(std::to_string(port) + "/");
 	}
 private:
 	struct sync_t
@@ -49,15 +46,15 @@ private:
 			}
 		});
 		raft_.regist_install_snapshot_handle(
-			[this](std::ifstream &file) 
+			[this](xutil::file_stream &file) 
 		{
 			metadata_.clear();
-
+			metadata_.load_snapshot(file);
 		});
 		raft_.regist_build_snapshot_callback(
 			[this](const std::function<bool(const std::string &)>& writer, int64_t index) {
 			std::cout << "build_snapshot_callback" << std::endl;
-			return metadata_.write_snapshot(writer);
+			metadata_.write_snapshot(writer);
 		});
 		raft_.init(config_);
 	}
@@ -68,6 +65,8 @@ private:
 			[this](const std::string &key, const std::string &value)
 				->std::pair<bool, std::string>
 		{
+			xutil::guard do_log([&] {std::cout << key << std::endl; });
+
 			using namespace xsimple_rpc::detail;
 
 			if (!raft_.check_leader())
@@ -88,17 +87,13 @@ private:
 			raft_.replicate(std::move(log), 
 				[&](bool status, int64_t index){
 					std::unique_lock<std::mutex> locker_(sync->mtx_);
-					std::cout << index << std::endl;
 					raft_status = status;
 					if (raft_status)
-					{
-						if (!metadata_.set(key, value))
-							throw std::runtime_error("set error");
-					}
+						metadata_.set(key, value);
 					sync->cv_.notify_one();
 			});
 			std::unique_lock<std::mutex> locker(sync->mtx_);
-			sync->cv_.wait(locker);
+			sync->cv_.wait(locker, [&] { return raft_status; });
 			if (raft_status)
 			{
 				return{ true,{} };
@@ -119,6 +114,8 @@ private:
 		rpc_server_.regist("del", 
 			[this](const std::string &key) ->std::pair<bool, std::string> 
 		{
+			xutil::guard do_log([&] {std::cout << key << std::endl; });
+
 			using namespace xsimple_rpc::detail;
 			if (!raft_.check_leader())
 				return{ false, "no leader" };
@@ -134,20 +131,18 @@ private:
 			bool result = false;
 			auto sync = get_sync_item();
 			bool del_ok_ = false;
+			bool replicate_callback_ = false;
 			raft_.replicate(std::move(log), 
 				[&](bool value, int64_t index){
 				std::unique_lock<std::mutex> locker_(sync->mtx_);
-				std::cout << index << std::endl;
 				result = value;
-				if (value)
-				{
-					if (metadata_.del(key))
-						del_ok_ = true;
-				}
+				if (value && metadata_.del(key))
+					del_ok_ = true;
+				replicate_callback_ = true;
 				sync->cv_.notify_one();
 			});
 			std::unique_lock<std::mutex> locker(sync->mtx_);
-			sync->cv_.wait(locker);
+			sync->cv_.wait(locker, [&] { return replicate_callback_; });
 			if (result)
 			{
 				if (del_ok_)

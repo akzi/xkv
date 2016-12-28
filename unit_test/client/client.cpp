@@ -25,7 +25,7 @@ public:
 			auto result = rpc_client_->rpc_call<RPC::set>(key, value);
 			if (result.first)
 				return true;
-			std::cout << "set failed,error:" << result.second << std::endl;
+			std::cout << "set '" << key << "' failed,error:" << result.second << std::endl;
 		}
 		catch (const std::exception& e)
 		{
@@ -45,7 +45,7 @@ public:
 				value = result.second;
 				return true;
 			}
-			std::cout << "get failed,error:" << result.second << std::endl;
+			std::cout << "get '"<< key <<"' failed,error:" << result.second << std::endl;
 		}
 		catch (const std::exception& e)
 		{
@@ -62,7 +62,7 @@ public:
 			auto result = rpc_client_->rpc_call<RPC::del>(key);
 			if (result.first)
 				return true;
-			std::cout << "del failed,error:" << result.second << std::endl;
+			std::cout << "det '" << key << "' failed,error:" << result.second << std::endl;
 		}
 		catch (const std::exception& e)
 		{
