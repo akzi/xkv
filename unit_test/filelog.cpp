@@ -70,7 +70,6 @@ XTEST_SUITE(filelog)
 
 		}
 	}
-#endif 
 	XUNIT_TEST(write_get_log_entries)
 	{
 		filelog flog;
@@ -96,6 +95,8 @@ XTEST_SUITE(filelog)
 			i++;
 		}
 	}
+#endif 
+	
 #if 0
 	XUNIT_TEST(truncate_suffix)
 	{

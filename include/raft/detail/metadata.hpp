@@ -314,7 +314,8 @@ namespace detail
 
 			xutil::file_stream file;
 			int mode =
-				xutil::file_stream::open_mode::OPEN_CREATE|
+				xutil::file_stream::open_mode::OPEN_RDWR |
+				xutil::file_stream::open_mode::OPEN_CREATE |
 				xutil::file_stream::open_mode::OPEN_TRUNC | 
 				xutil::file_stream::open_mode::OPEN_BINARY;
 			auto filepath = get_snapshot_file();
@@ -359,16 +360,26 @@ namespace detail
 		void rm_old_files()
 		{
 			auto filepath = get_old_log_file();
-			if (!xutil::vfs::unlink()(filepath))
-				throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+			if (xutil::vfs::is_file()(filepath))
+			{
+				if (!xutil::vfs::unlink()(filepath))
+					throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+			}
 
 			filepath = get_old_snapshot_file();
-			if (!xutil::vfs::unlink()(filepath))
-				throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
-
+			if (xutil::vfs::is_file()(filepath))
+			{
+				if (!xutil::vfs::unlink()(filepath))
+					throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+			}
+			
 			filepath = get_old_metadata_file();
-			if (!xutil::vfs::unlink()(filepath))
-				throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+			if (xutil::vfs::is_file()(filepath))
+			{
+				if (!xutil::vfs::unlink()(filepath))
+					throw std::runtime_error(FILE_LINE + "unlink file error, filepath: " + filepath);
+			}
+			
 		}
 		std::string get_snapshot_file()
 		{

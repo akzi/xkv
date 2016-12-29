@@ -40,9 +40,6 @@
     <ClInclude Include="..\include\raft\raft.hpp">
       <Filter>include</Filter>
     </ClInclude>
-    <ClInclude Include="..\include\raft\detail\macros.hpp">
-      <Filter>include\detail</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="include">

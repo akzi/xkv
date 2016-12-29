@@ -1,4 +1,4 @@
-#if 0
+#if 1
 #include "../include/raft/raft.hpp"
 #include "../../xtest/include/xtest.hpp"
 
@@ -9,11 +9,11 @@ XTEST_SUITE(metadata)
 		using namespace::xraft::detail;
 		metadata<lock_free> db;
 
-		xassert(db.init("data/"));
+		db.init("data/");
 		
 		for (size_t i = 0; i < 10000; i++)
 		{
-			xassert(db.set(std::to_string(i), std::to_string(i)));
+			db.set(std::to_string(i), std::to_string(i));
 		}
 	}
 
@@ -22,7 +22,7 @@ XTEST_SUITE(metadata)
 		using namespace::xraft::detail;
 		metadata<lock_free> db;
 
-		xassert(db.init("data/"));
+		db.init("data/");
 
 		for (size_t i = 0; i < 10000; i++)
 		{
@@ -36,7 +36,7 @@ XTEST_SUITE(metadata)
 		using namespace::xraft::detail;
 		metadata<lock_free> db;
 
-		xassert(db.init("data/"));
+		db.init("data/");
 
 		for (size_t i = 0; i < 10000; i++)
 		{

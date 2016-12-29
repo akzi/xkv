@@ -1,6 +1,7 @@
+#if 0
+
 #include "../include/raft/raft.hpp"
 #include "../../xtest/include/xtest.hpp"
-
 XTEST_SUITE(snapshot)
 {
 	XUNIT_TEST(checker)
@@ -25,3 +26,5 @@ XTEST_SUITE(snapshot)
 		xassert(reader.read_sanpshot_head(head));
 	}
 }
+
+#endif

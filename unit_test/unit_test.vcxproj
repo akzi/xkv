@@ -24,7 +24,6 @@
     <ClInclude Include="..\include\raft\detail\endec.hpp" />
     <ClInclude Include="..\include\raft\detail\filelog.hpp" />
     <ClInclude Include="..\include\raft\detail\functors.hpp" />
-    <ClInclude Include="..\include\raft\detail\macros.hpp" />
     <ClInclude Include="..\include\raft\detail\metadata.hpp" />
     <ClInclude Include="..\include\raft\detail\raft_configuration.hpp" />
     <ClInclude Include="..\include\raft\detail\raft_peer.hpp" />
