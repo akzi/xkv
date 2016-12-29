@@ -7,10 +7,13 @@ namespace xraft
 		class timer
 		{
 		public:
-			timer()
-				
+			timer()				
 			{
-				
+			}
+
+			~timer()
+			{
+				stop();
 			}
 			int64_t set_timer(int64_t timeout, std::function<void()> &&callback)
 			{
@@ -39,12 +42,16 @@ namespace xraft
 			}
 			void start()
 			{
-				checker_ = std::thread([this] { run(); });
+				worker_ = std::thread([this] { run(); });
 			}
 			void stop()
 			{
-				stop_ = false;
-				cv_.notify_one();
+				if (worker_.joinable())
+				{
+					stop_ = true;
+					cv_.notify_one();
+					worker_.join();
+				}
 			}
 		private:
 			void run()
@@ -80,7 +87,7 @@ namespace xraft
 			int64_t timer_id_ = 1;
 			std::multimap<high_resolution_clock::time_point, 
 				std::pair<int64_t, std::function<void()>>> actions_;
-			std::thread checker_;
+			std::thread worker_;
 		};
 	}
 }

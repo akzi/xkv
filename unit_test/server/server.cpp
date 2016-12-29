@@ -10,6 +10,10 @@ public:
 	{
 
 	}
+	~server()
+	{
+		rpc_proactor_pool_.stop();
+	}
 	void init(raft_config cfg, const std::string &ip, int port)
 	{
 		config_ = cfg;
@@ -189,12 +193,16 @@ int main(int args, char **argc)
 {
 	int port;
 	std::cin >> port;
+	server::raft_config config;
+	config.append_log_timeout_ = 10000;
+	config.election_timeout_ = 3000;
+	config.heartbeat_interval_ = 1000;
+
+	config.raft_log_size_ = 1024 * 1024;
+	config.raft_log_count_ = 5;
+
 	if (9001 == port)
 	{
-		server::raft_config config;
-		config.append_log_timeout_ = 10000;
-		config.election_timeout_ = 3000;
-		config.heartbeat_interval_ = 1000;
 		config.metadata_base_path_ = "9001/data/metadata/";
 		config.raftlog_base_path_ = "9001/data/log/";
 		config.snapshot_base_path_ = "9001/data/snapshot/";
@@ -211,10 +219,6 @@ int main(int args, char **argc)
 	}
 	else 
 	{
-		server::raft_config config;
-		config.append_log_timeout_ = 10000;
-		config.election_timeout_ = 3000;
-		config.heartbeat_interval_ = 1000;
 		config.metadata_base_path_ = "9002/data/metadata/";
 		config.raftlog_base_path_ = "9002/data/log/";
 		config.snapshot_base_path_ = "9002/data/snapshot/";

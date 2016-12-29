@@ -99,9 +99,11 @@ namespace xraft
 			using nodes = std::vector<raft_node>;
 			nodes peers_;
 			raft_node myself_;
-			std::size_t append_log_timeout_;
-			std::size_t election_timeout_;
-			std::size_t heartbeat_interval_;
+			std::size_t raft_log_size_ = 0;
+			std::size_t raft_log_count_ = 0;
+			std::size_t append_log_timeout_ = 0;
+			std::size_t election_timeout_ = 0;
+			std::size_t heartbeat_interval_ = 0;
 			std::string raftlog_base_path_;
 			std::string snapshot_base_path_;
 			std::string metadata_base_path_;

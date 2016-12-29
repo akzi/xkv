@@ -480,10 +480,25 @@ namespace detail
 				return current_file_.get_log_start();
 			return 0;
 		}
+		
 		void set_make_snapshot_trigger(std::function<void()> callback)
 		{
 			std::lock_guard<std::mutex> lock(mtx_);
 			make_snapshot_trigger_ = callback;
+		}
+
+		void max_log_size(std::size_t value)
+		{
+			max_log_size_ = value;
+			if (max_log_size_ == 0)
+				max_log_size_ = 1024 * 1024 * 10;//10M
+		}
+
+		void max_log_count(std::size_t value)
+		{
+			max_log_count_ = value;
+			if (max_log_count_ == 0)
+				max_log_count_ = 5;
 		}
 	private:
 		bool get_entries_from_cache(std::list<log_entry> &log_entries,
@@ -533,7 +548,7 @@ namespace detail
 		}
 		bool check_current_file_size()
 		{
-			if (current_file_.size() > max_file_size_)
+			if (current_file_.size() > max_log_size_)
 			{
 				current_file_.sync();
 				logfiles_.emplace(current_file_.get_log_start(),
@@ -548,7 +563,7 @@ namespace detail
 
 		void check_make_snapshot_trigger()
 		{
-			if (logfiles_.size() > max_log_file_count_ 
+			if (logfiles_.size() > max_log_count_ 
 				&& make_snapshot_trigger_)
 			{
 				make_snapshot_trigger_();
@@ -559,13 +574,13 @@ namespace detail
 		std::list<log_entry> log_entries_cache_;
 		std::size_t log_entries_cache_size_ = 0;
 		std::size_t max_cache_size_ = 1;
-		int64_t max_file_size_ = 10*1024;
+		std::size_t max_log_count_ = 4;
+		int64_t max_log_size_ = 10*1024;
 		int64_t last_index_ = 0;
 		std::string path_;
 		file current_file_;
 		int64_t current_file_last_index_ = 0;
 		std::map<int64_t, detail::file> logfiles_;
-		std::size_t max_log_file_count_ = 4;
 		std::function<void()> make_snapshot_trigger_;
 	};
 }

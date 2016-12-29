@@ -24,7 +24,7 @@ namespace xraft
 		}
 		~raft()
 		{
-
+			close();
 		}
 		bool check_leader()
 		{
@@ -59,6 +59,13 @@ namespace xraft
  			set_election_timer();
 		}
 	private:
+		void close()
+		{
+			timer_.stop();
+			commiter_.stop();
+			for (auto &itr : pees_)
+				itr->stop();
+		}
 		void init_raft_log()
 		{
 			if (!log_.init(filelog_base_path_))
@@ -108,6 +115,8 @@ namespace xraft
 			snapshot_base_path_ = config.snapshot_base_path_;
 			append_log_timeout_ = config.append_log_timeout_;
 			election_timeout_ = config.election_timeout_;
+			log_.max_log_size(config.raft_log_size_);
+			log_.max_log_count(config.raft_log_count_);
 		}
 		void init_snapshot_builder()
 		{
@@ -561,8 +570,6 @@ namespace xraft
 					request.prev_log_term_ = last_snapshot_term_;
 				}
 			}
-			
-			
 			return std::move(request);
 		}
 		void handle_vote_response(const vote_response &response)
@@ -772,7 +779,7 @@ namespace xraft
 		install_snapshot_callback install_snapshot_callback_;
 
 		raft_config_mgr raft_config_mgr_;
-		int64_t append_log_timeout_ = 10000;//10 seconds;
+		int64_t append_log_timeout_;
 		std::vector<std::unique_ptr<raft_peer>> pees_;
 		
 		state state_;

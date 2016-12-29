@@ -39,12 +39,16 @@ namespace detail
 		void start()
 		{
 			peer_thread_ = std::thread([this] {  run(); });
-			peer_thread_.detach();
 		}
 		void stop()
 		{
-			stop_ = true;
-			notify();
+			if (peer_thread_.joinable())
+			{
+				stop_ = true;
+				notify();
+				peer_thread_.join();
+			}
+			
 		}
 		std::function<void(raft_peer&, bool)> connect_callback_;
 		std::function<int64_t(void)> get_current_term_;
