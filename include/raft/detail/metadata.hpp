@@ -281,7 +281,7 @@ namespace detail
 						auto value = endec::get_uint64(ptr);
 						integral_map_[key] = value;
 					}
-					else if (static_cast<op>(_op) == op::e_set)
+					else if (static_cast<op>(_op) == op::e_del)
 					{
 						auto key = endec::get_string(ptr);
 						auto itr = integral_map_.find(key);

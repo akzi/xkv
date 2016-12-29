@@ -27,9 +27,9 @@
 #include<windows.h> 
 #endif
 
-#define FILE_LINE (std::string("[ FILE:") + __FILE__ + " LINE: " + std::to_string(__LINE__)+" ] ")
+#define FILE_LINE \
+(std::string("[ FILE:") + __FILE__ + " LINE: " + std::to_string(__LINE__)+" ] ")
 
-#include "macros.hpp"
 #include "endec.hpp"
 #include "raft_proto.hpp"
 #include "utils.hpp"
