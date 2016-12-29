@@ -27,25 +27,26 @@ namespace detail
 			filepath_ = filepath;
 			last_log_index_ = -1;
 			log_index_start_ = -1;
-			return open_no_lock();
+			return do_open();
 		}
 
 		void write(int64_t index, std::string &&data)
 		{
 			int64_t file_pos = data_file_.tell();
 			uint32_t len = (uint32_t)data.size();
+
 			if(data_file_.write((char*)&len, sizeof(len)) != sizeof(len))
 				throw std::runtime_error(FILE_LINE + " data_file_ write error");
+
 			if(data_file_.write(data.data(), data.size()) != data.size())
 				throw std::runtime_error(FILE_LINE + " data_file_ write error");
-			//if(!data_file_.sync())
-			//	throw std::runtime_error(FILE_LINE + " data_file_ sync error");
+
 			if(index_file_.write(reinterpret_cast<char*>(&index), sizeof(index)) != sizeof(index))
 				throw std::runtime_error(FILE_LINE + " index_file_ write error");
+
 			if (index_file_.write(reinterpret_cast<char*>(&file_pos), sizeof(int64_t)) != sizeof(int64_t))
 				throw std::runtime_error(FILE_LINE + " index_file_ write error");
-			//if(!index_file_.sync())
-				//throw std::runtime_error(FILE_LINE + " index_file_ sync error");
+
 			last_log_index_ = index;
 		}
 
@@ -116,25 +117,22 @@ namespace detail
 			if(!index_file_.trunc(get_index_file_offset(index)))
 				throw std::runtime_error(FILE_LINE +"index_file_ trunc error");
 		}
-		bool truncate_prefix(int64_t index)
+		void truncate_prefix(int64_t index)
 		{
 			int64_t offset = 0;
 			if (!get_data_file_offset(index + 1, offset))
-				return false;
+				throw std::runtime_error(FILE_LINE+ "get_data_file_offset failed");
 			data_file_.close();
 			index_file_.close();
 			if (!functors::fs::truncate_prefix()(get_data_file_path(), offset))
-			{
-				return false;
-			}
+				throw std::runtime_error(FILE_LINE  + "functors::fs::truncate_prefix error");
+
 			offset = get_index_file_offset(index + 1);
 			auto tmp = log_index_start_;
 			log_index_start_ = -1;
 			if (!functors::fs::truncate_prefix()(get_index_file_path(), offset))
-			{
-				//todo log error ;
-				return false;
-			}
+				throw std::runtime_error(FILE_LINE+ "functors::fs::truncate_prefix() error");
+
 			auto old_data_file = get_data_file_path();
 			auto old_index_file = get_index_file_path();
 			auto beg = filepath_.find_last_of('/') + 1;
@@ -143,7 +141,7 @@ namespace detail
 			filepath_ += ".log";
 			xutil::vfs::rename()(old_data_file, get_data_file_path());
 			xutil::vfs::rename()(old_index_file, get_index_file_path());
-			return open_no_lock();
+			do_open();
 		}
 		int64_t get_last_log_index()
 		{
@@ -164,6 +162,11 @@ namespace detail
 		bool is_open()
 		{
 			return data_file_ && index_file_;
+		}
+		void sync()
+		{
+			data_file_.sync();
+			index_file_.sync();
 		}
 	private:
 		void move_reset(file &&self)
@@ -220,6 +223,8 @@ namespace detail
 		}
 		bool rm_on_lock()
 		{
+			log_index_start_ = -1;
+			last_log_index_ = -1;
 			data_file_.close();
 			index_file_.close();
 			if (!xutil::vfs::unlink()(get_data_file_path()) ||
@@ -242,7 +247,7 @@ namespace detail
 			}
 			return log_index_start_;
 		}
-		bool open_no_lock()
+		bool do_open()
 		{
 			if (data_file_)
 				data_file_.close();
@@ -423,8 +428,7 @@ namespace detail
 			}
 			for (auto itr = logfiles_.begin(); itr != logfiles_.end(); ++itr)
 			{
-				if (index <= itr->second.get_last_log_index() &&
-					itr->second.get_log_start() <= index)
+				if (index <= itr->second.get_last_log_index() && itr->second.get_log_start() <= index)
 				{
 					itr->second.truncate_suffix(index);
 					current_file_.rm();
@@ -446,6 +450,14 @@ namespace detail
 				itr->second.rm();
 				itr = logfiles_.erase(itr);
 			}
+		}
+		void clear()
+		{
+			std::lock_guard<std::mutex> lock(mtx_);
+			current_file_.rm();
+			for (auto &itr : logfiles_)
+				itr.second.rm();
+			logfiles_.clear();
 		}
 		int64_t get_last_log_entry_term()
 		{
@@ -523,6 +535,7 @@ namespace detail
 		{
 			if (current_file_.size() > max_file_size_)
 			{
+				current_file_.sync();
 				logfiles_.emplace(current_file_.get_log_start(),
 					std::move(current_file_));
 				std::string filepath = path_ + std::to_string(last_index_ + 1) + ".log";
@@ -546,13 +559,13 @@ namespace detail
 		std::list<log_entry> log_entries_cache_;
 		std::size_t log_entries_cache_size_ = 0;
 		std::size_t max_cache_size_ = 1;
-		int64_t max_file_size_ = 100*1024;
+		int64_t max_file_size_ = 10*1024;
 		int64_t last_index_ = 0;
 		std::string path_;
 		file current_file_;
 		int64_t current_file_last_index_ = 0;
 		std::map<int64_t, detail::file> logfiles_;
-		std::size_t max_log_file_count_ = 5;
+		std::size_t max_log_file_count_ = 4;
 		std::function<void()> make_snapshot_trigger_;
 	};
 }

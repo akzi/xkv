@@ -45,6 +45,7 @@ namespace detail
 			{
 				xutil::vfs::unlink()(itr);
 			}
+			reopen_log(true);
 		}
 		void init(const std::string &path)
 		{

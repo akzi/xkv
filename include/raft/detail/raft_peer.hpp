@@ -193,9 +193,10 @@ namespace detail
 
 				auto bytes = file.read((char*)request.data_.data(), request.data_.size());
 				if (bytes == -1)
-					bytes = 0;
-				request.data_.resize(bytes);
+					throw std::runtime_error(FILE_LINE+ " read snapshot file error");
+
 				request.done_ = bytes != request.data_.size();
+				request.data_.resize(bytes);
 
 				try
 				{
@@ -206,13 +207,13 @@ namespace detail
 					};
 
 					auto resp = rpc_client_->rpc_call<RPC::install_snapshot_request>(request);
+
 					if (resp.term_ > request.term_)
 					{
 						new_term_callback_(resp.term_);
 						return;
 					}
-					else if (resp.bytes_stored_ != 
-							request.offset_ + request.data_.size())
+					else if (resp.bytes_stored_ !=  request.offset_ + request.data_.size())
 					{
 						file.seek(resp.bytes_stored_ + sizeof(snapshot_head), xutil::file_stream::BEGIN);
 					}

@@ -209,7 +209,6 @@ namespace xraft
 			response.term_ = current_term_;
 			
 			if (request.term_ < current_term_)
-				//todo log Warm
 				return response;
 			
 			if (current_term_ < request.term_)
@@ -219,12 +218,15 @@ namespace xraft
 			}
 
 			if (leader_id_.empty())
+			{
 				leader_id_ = request.leader_id_;
+			}
 			else if (leader_id_ != request.leader_id_)
 			{
 				leader_id_ = request.leader_id_;
-				//todo log Warm
+
 			}
+
 			xutil::guard guard([this] { set_election_timer(); });
 			
 			if (last_snapshot_index_ > get_last_log_entry_index())
@@ -319,8 +321,6 @@ namespace xraft
 				is_ok = true;
 			}
 				
-			//todo hold votes check
-
 			if (request.term_ > current_term_)
 			{
 				step_down(request.term_);
@@ -349,13 +349,11 @@ namespace xraft
 			response.term_ = current_term_;
 			if (request.term_ < current_term_)
 			{
-				//todo LOG WARM
 				return response;
 			}
 
 			if (request.term_ > current_term_)
 			{
-				//todo log Info
 				response.term_ = request.term_;
 			}
 			step_down(request.term_);
@@ -363,7 +361,6 @@ namespace xraft
 			if (leader_id_.empty())
 			{
 				leader_id_ = request.leader_id_;
-				//todo log info
 			}
 			else if (leader_id_ != request.leader_id_)
 			{
@@ -373,15 +370,14 @@ namespace xraft
 			if (!snapshot_writer_)
 				open_snapshot_writer(request.last_snapshot_index_);
 			response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
+
 			if (request.offset_ != snapshot_writer_.get_bytes_writted())
 			{
-				//todo LOG WRAM
 				response.bytes_stored_ = snapshot_writer_.get_bytes_writted();
 				return response;
 			}
 			if (!snapshot_writer_.write(request.data_))
 			{
-				//todo LOG ERROR;
 				snapshot_writer_.discard();
 				response.bytes_stored_ = 0;
 				return response;
@@ -391,7 +387,6 @@ namespace xraft
 			{
 				if (request.last_snapshot_index_ < last_snapshot_index_)
 				{
-					//todo Warm
 					snapshot_writer_.discard();
 					return response;
 				}
@@ -403,30 +398,28 @@ namespace xraft
 		{
 			snapshot_writer_.close();
 			if (!snapshot_reader_.open(snapshot_writer_.get_snapshot_filepath()))
-			{
-				//todo process error;
-			}
+				throw std::runtime_error(FILE_LINE + "snapshot_reader open error");
+
 			snapshot_head head;
 			if (!snapshot_reader_.read_sanpshot_head(head))
-			{
-				//todo process error;
-			}
+				throw std::runtime_error(FILE_LINE + "snapshot_reader read_sanpshot_head error");
+
 			set_last_snapshot_index(head.last_included_index_);
 			set_last_snapshot_term(head.last_included_term_);
 			auto &file = snapshot_reader_.get_snapshot_stream();
 			install_snapshot_callback_(file);;
-			log_.truncate_suffix(1);
+			log_.clear();
 			if (head.last_included_index_ > committed_index_)
 				set_committed_index(head.last_included_index_);
+
+			clear_old_snapshot_files();
 		}
 		void open_snapshot_writer(int64_t index)
 		{
-			if(functors::fs::mkdir()(snapshot_base_path_))
-				snapshot_writer_.open(snapshot_base_path_ +std::to_string(index)+".SS");
-			else
-			{
-				//todo process Error;
-			}
+			if (!functors::fs::mkdir()(snapshot_base_path_))
+				throw std::runtime_error(FILE_LINE+ "mkdir error,path:"+ snapshot_base_path_);
+
+			snapshot_writer_.open(snapshot_base_path_ +std::to_string(index)+".SS");
 		}
 
 		void handle_new_term(int64_t new_term)
@@ -455,17 +448,20 @@ namespace xraft
 			if (state_ == state::e_leader)
 			{
 				sleep_peer_threads();
-				notify_noleader_error();
 			}
 			state_ = state::e_follower;
+			notify_noleader_error();
 			set_election_timer();
 		}
 		void set_election_timer()
 		{
-			cancel_election_timer();
+			if (election_timer_id_)
+				cancel_election_timer();
+
 			std::random_device rd;
 			std::mt19937 gen(rd());
 			std::uniform_int_distribution<> dis(1, (int)election_timeout_);
+
 			election_timer_id_ = timer_.set_timer(election_timeout_+ dis(gen),[this] {
 				std::cout << "------election timer callback------" << std::endl;
 				std::lock_guard<std::mutex> lock(mtx_);
@@ -604,6 +600,7 @@ namespace xraft
 		void cancel_election_timer()
 		{
 			timer_.cancel(election_timer_id_);
+			election_timer_id_ = 0;
 		}
 		vote_request build_vote_request()
 		{
@@ -674,21 +671,12 @@ namespace xraft
 			snapshot_reader reader;
 			auto filepath = get_snapshot_filepath();
 			if (!reader.open(filepath))
-			{
-				std::cout << "open file :" + filepath + " error" << std::endl;
 				throw std::runtime_error("open file :" + filepath + " error");
-			}
+
 			snapshot_head head;
 			if (!reader.read_sanpshot_head(head))
-			{
 				throw std::runtime_error("read_sanpshot_head error");
-			}
-			if (head.last_included_index_ > get_last_log_entry_index() ||
-				head.last_included_term_ > current_term_)
-			{
-				std::cout << "make_snapshot_done_callback error" << std::endl;
-			}
-			
+
 			set_last_snapshot_index(head.last_included_index_);
 			set_last_snapshot_term(head.last_included_term_);
 
@@ -699,6 +687,18 @@ namespace xraft
 				});
 			});
 			log_.truncate_prefix(index);
+
+			clear_old_snapshot_files();
+		}
+		void clear_old_snapshot_files()
+		{
+			auto filepath = get_snapshot_filepath();
+			auto files = functors::fs::ls_files()(snapshot_base_path_);
+			for (auto itr : files)
+			{
+				if (itr != filepath)
+					xutil::vfs::unlink()(itr);
+			}
 		}
 		int64_t get_last_log_entry_term()
 		{
